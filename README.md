@@ -1,1 +1,7 @@
-### Agouti is a fork of [PIVX](https://github.com/PIVX-Project/PIVX) that forked [Dash](https://github.com/dashpay/dash) that forked [Bitcoin](https://github.com/bitcoin/bitcoinp)
+
+![alt text](https://agouti.io/wp-content/uploads/2021/03/Agouti.png "Agouti Logo")
+# Agouti - First Decentralised Charity .
+#  
+# https://agouti.io/
+
+
