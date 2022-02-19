@@ -112,20 +112,20 @@ mn01 127.0.0.1:5151 93HaYBVUCYjEMeeH1Y4sBGLALQZE1Yc1K64xiqgX37tGBDQL8Xg 2bcd3c84
 mn02 127.0.0.2:5151 93WaAb3htPJEV8E9aQcN23Jt97bPex7YvWfgMDTUdWJvzmrMqey aa9f1034d973377a5e733272c3d0eced1de22555ad45d6b24abadff8087948d4 0 7gnwGHt17heGpG9Crfeh4KGpYNFugPhJdh:25
 ```
 
-## What about the agoutiold.conf file?
+## What about the agouti.conf file?
 
-If you are using a masternode.conf file you no longer need the agoutiold.conf file. The exception is if you need custom settings (thanks oblox). 
+If you are using a masternode.conf file you no longer need the agouti.conf file. The exception is if you need custom settings (thanks oblox). 
 
-## Update agoutiold.conf on server
+## Update agouti.conf on server
 
-If you generated a new masternode private key, you will need to update the remote agoutiold.conf files.
+If you generated a new masternode private key, you will need to update the remote agouti.conf files.
 
 Shut down the daemon and then edit the file.
 
-```sudo nano .agoutiold/agoutiold.conf```
+```sudo nano .agoutiold/agouti.conf```
 
 ### Edit the masternodeprivkey
-If you generated a new masternode private key, you will need to update the masternodeprivkey value in your remote agoutiold.conf file.
+If you generated a new masternode private key, you will need to update the masternodeprivkey value in your remote agouti.conf file.
 
 ## Start your MasterNodes
 

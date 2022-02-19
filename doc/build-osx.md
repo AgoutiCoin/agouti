@@ -104,8 +104,8 @@ directory. We have to first create the RPC configuration file, though.
 Run `./agoutioldd` to get the filename where it should be put, or just try these
 commands:
 
-    echo -e "rpcuser=agoutioldrpc\nrpcpassword=$(xxd -l 16 -p /dev/urandom)" > "/Users/${USER}/Library/Application Support/Agoutiold/agoutiold.conf"
-    chmod 600 "/Users/${USER}/Library/Application Support/Agoutiold/agoutiold.conf"
+    echo -e "rpcuser=agoutioldrpc\nrpcpassword=$(xxd -l 16 -p /dev/urandom)" > "/Users/${USER}/Library/Application Support/Agoutiold/agouti.conf"
+    chmod 600 "/Users/${USER}/Library/Application Support/Agoutiold/agouti.conf"
 
 The next time you run it, it will start downloading the blockchain, but it won't
 output anything while it's doing this. This process may take several hours;

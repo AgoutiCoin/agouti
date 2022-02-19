@@ -10,9 +10,9 @@ Type=forking
 PIDFile=/var/lib/agoutioldd/agoutioldd.pid
 
 ExecStart=/usr/bin/agoutioldd -daemon -pid=/var/lib/agoutioldd/agoutioldd.pid \
-          -conf=/etc/agoutiold/agoutiold.conf -datadir=/var/lib/agoutioldd
+          -conf=/etc/agoutiold/agouti.conf -datadir=/var/lib/agoutioldd
 
-ExecStop=-/usr/bin/agoutiold-cli -conf=/etc/agoutiold/agoutiold.conf \
+ExecStop=-/usr/bin/agoutiold-cli -conf=/etc/agoutiold/agouti.conf \
          -datadir=/var/lib/agoutioldd stop
 
 Restart=always

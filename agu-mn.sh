@@ -75,7 +75,7 @@ echo "Enter masternode private key for node $ALIAS , Go To your Windows Wallet T
 read PRIVKEY
 
 CONF_DIR=~/.agoutiold/
-CONF_FILE=agoutiold.conf
+CONF_FILE=agouti.conf
 PORT=5151
 
 mkdir -p $CONF_DIR

@@ -65,7 +65,7 @@ bool AppInit(int argc, char* argv[])
     //
     // Parameters
     //
-    // If Qt is used, parameters/agoutiold.conf are parsed in qt/agoutiold.cpp's main()
+    // If Qt is used, parameters/agouti.conf are parsed in qt/agoutiold.cpp's main()
     ParseParameters(argc, argv);
 
     // Process help and version before taking care about datadir

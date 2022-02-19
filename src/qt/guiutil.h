@@ -103,7 +103,7 @@ bool isObscured(QWidget* w);
 // Open debug.log
 void openDebugLogfile();
 
-// Open agoutiold.conf
+// Open agouti.conf
 void openConfigfile();
 
 // Open masternode.conf

@@ -35,10 +35,10 @@ generate one from the shell yourself like this:
 
 bash -c 'tr -dc a-zA-Z0-9 < /dev/urandom | head -c32 && echo'
 
-Once you have a password in hand, set rpcpassword= in /etc/agoutiold/agoutiold.conf
+Once you have a password in hand, set rpcpassword= in /etc/agoutiold/agouti.conf
 
 For an example configuration file that describes the configuration settings,
-see contrib/debian/examples/agoutiold.conf.
+see contrib/debian/examples/agouti.conf.
 
 3. Paths
 ---------------------------------
@@ -46,7 +46,7 @@ see contrib/debian/examples/agoutiold.conf.
 All three configurations assume several paths that might need to be adjusted.
 
 Binary:              /usr/bin/agoutioldd
-Configuration file:  /etc/agoutiold/agoutiold.conf
+Configuration file:  /etc/agoutiold/agouti.conf
 Data directory:      /var/lib/agoutioldd
 PID file:            /var/run/agoutioldd/agoutioldd.pid (OpenRC and Upstart)
                      /var/lib/agoutioldd/agoutioldd.pid (systemd)
