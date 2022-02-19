@@ -1,5 +1,5 @@
 // Copyright (c) 2017 The PIVX Core developers
-// Copyright (c) 2017 The Agoutiold developers
+// Copyright (c) 2022 The Agouti developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
