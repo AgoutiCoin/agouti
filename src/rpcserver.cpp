@@ -2,7 +2,7 @@
 // Copyright (c) 2009-2014 The Bitcoin developers
 // Copyright (c) 2014-2015 The Dash developers
 // Copyright (c) 2015-2017 The PIVX developers
-// Copyright (c) 2017 The Agouti developers
+// Copyright (c) 2017 The Agoutiold developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -238,10 +238,10 @@ Value stop(const Array& params, bool fHelp)
     if (fHelp || params.size() > 1)
         throw runtime_error(
             "stop\n"
-            "\nStop Agouti server.");
+            "\nStop Agoutiold server.");
     // Shutdown will take long enough that the response should get back
     StartShutdown();
-    return "Agouti server stopping";
+    return "Agoutiold server stopping";
 }
 
 
@@ -318,36 +318,36 @@ static const CRPCCommand vRPCCommands[] =
         {"hidden", "reconsiderblock", &reconsiderblock, true, true, false},
         {"hidden", "setmocktime", &setmocktime, true, false, false},
 
-        /* Agouti features */
-        {"agouti", "masternode", &masternode, true, true, false},
-        {"agouti", "listmasternodes", &listmasternodes, true, true, false},
-        {"agouti", "getmasternodecount", &getmasternodecount, true, true, false},
-        {"agouti", "masternodeconnect", &masternodeconnect, true, true, false},
-        {"agouti", "masternodecurrent", &masternodecurrent, true, true, false},
-        {"agouti", "masternodedebug", &masternodedebug, true, true, false},
-        {"agouti", "startmasternode", &startmasternode, true, true, false},
-        {"agouti", "createmasternodekey", &createmasternodekey, true, true, false},
-        {"agouti", "getmasternodeoutputs", &getmasternodeoutputs, true, true, false},
-        {"agouti", "listmasternodeconf", &listmasternodeconf, true, true, false},
-        {"agouti", "getmasternodestatus", &getmasternodestatus, true, true, false},
-        {"agouti", "getmasternodewinners", &getmasternodewinners, true, true, false},
-        {"agouti", "getmasternodescores", &getmasternodescores, true, true, false},
-        {"agouti", "mnbudget", &mnbudget, true, true, false},
-        {"agouti", "preparebudget", &preparebudget, true, true, false},
-        {"agouti", "submitbudget", &submitbudget, true, true, false},
-        {"agouti", "mnbudgetvote", &mnbudgetvote, true, true, false},
-        {"agouti", "getbudgetvotes", &getbudgetvotes, true, true, false},
-        {"agouti", "getnextsuperblock", &getnextsuperblock, true, true, false},
-        {"agouti", "getbudgetprojection", &getbudgetprojection, true, true, false},
-        {"agouti", "getbudgetinfo", &getbudgetinfo, true, true, false},
-        {"agouti", "mnbudgetrawvote", &mnbudgetrawvote, true, true, false},
-        {"agouti", "mnfinalbudget", &mnfinalbudget, true, true, false},
-        {"agouti", "checkbudgets", &checkbudgets, true, true, false},
-        {"agouti", "mnsync", &mnsync, true, true, false},
-        {"agouti", "spork", &spork, true, true, false},
-        {"agouti", "getpoolinfo", &getpoolinfo, true, true, false},
+        /* Agoutiold features */
+        {"agoutiold", "masternode", &masternode, true, true, false},
+        {"agoutiold", "listmasternodes", &listmasternodes, true, true, false},
+        {"agoutiold", "getmasternodecount", &getmasternodecount, true, true, false},
+        {"agoutiold", "masternodeconnect", &masternodeconnect, true, true, false},
+        {"agoutiold", "masternodecurrent", &masternodecurrent, true, true, false},
+        {"agoutiold", "masternodedebug", &masternodedebug, true, true, false},
+        {"agoutiold", "startmasternode", &startmasternode, true, true, false},
+        {"agoutiold", "createmasternodekey", &createmasternodekey, true, true, false},
+        {"agoutiold", "getmasternodeoutputs", &getmasternodeoutputs, true, true, false},
+        {"agoutiold", "listmasternodeconf", &listmasternodeconf, true, true, false},
+        {"agoutiold", "getmasternodestatus", &getmasternodestatus, true, true, false},
+        {"agoutiold", "getmasternodewinners", &getmasternodewinners, true, true, false},
+        {"agoutiold", "getmasternodescores", &getmasternodescores, true, true, false},
+        {"agoutiold", "mnbudget", &mnbudget, true, true, false},
+        {"agoutiold", "preparebudget", &preparebudget, true, true, false},
+        {"agoutiold", "submitbudget", &submitbudget, true, true, false},
+        {"agoutiold", "mnbudgetvote", &mnbudgetvote, true, true, false},
+        {"agoutiold", "getbudgetvotes", &getbudgetvotes, true, true, false},
+        {"agoutiold", "getnextsuperblock", &getnextsuperblock, true, true, false},
+        {"agoutiold", "getbudgetprojection", &getbudgetprojection, true, true, false},
+        {"agoutiold", "getbudgetinfo", &getbudgetinfo, true, true, false},
+        {"agoutiold", "mnbudgetrawvote", &mnbudgetrawvote, true, true, false},
+        {"agoutiold", "mnfinalbudget", &mnfinalbudget, true, true, false},
+        {"agoutiold", "checkbudgets", &checkbudgets, true, true, false},
+        {"agoutiold", "mnsync", &mnsync, true, true, false},
+        {"agoutiold", "spork", &spork, true, true, false},
+        {"agoutiold", "getpoolinfo", &getpoolinfo, true, true, false},
 #ifdef ENABLE_WALLET
-        {"agouti", "obfuscation", &obfuscation, false, false, true}, /* not threadSafe because of SendMoney */
+        {"agoutiold", "obfuscation", &obfuscation, false, false, true}, /* not threadSafe because of SendMoney */
 
         /* Wallet */
         {"wallet", "addmultisigaddress", &addmultisigaddress, true, false, true},
@@ -626,16 +626,16 @@ void StartRPCThreads()
         unsigned char rand_pwd[32];
         GetRandBytes(rand_pwd, 32);
         uiInterface.ThreadSafeMessageBox(strprintf(
-                                             _("To use agoutid, or the -server option to agouti-qt, you must set an rpcpassword in the configuration file:\n"
+                                             _("To use agoutioldd, or the -server option to agoutiold-qt, you must set an rpcpassword in the configuration file:\n"
                                                "%s\n"
                                                "It is recommended you use the following random password:\n"
-                                               "rpcuser=agoutirpc\n"
+                                               "rpcuser=agoutioldrpc\n"
                                                "rpcpassword=%s\n"
                                                "(you do not need to remember this password)\n"
                                                "The username and password MUST NOT be the same.\n"
                                                "If the file does not exist, create it with owner-readable-only file permissions.\n"
                                                "It is also recommended to set alertnotify so you are notified of problems;\n"
-                                               "for example: alertnotify=echo %%s | mail -s \"Agouti Alert\" admin@foo.com\n"),
+                                               "for example: alertnotify=echo %%s | mail -s \"Agoutiold Alert\" admin@foo.com\n"),
                                              GetConfigFile().string(),
                                              EncodeBase58(&rand_pwd[0], &rand_pwd[0] + 32)),
             "", CClientUIInterface::MSG_ERROR | CClientUIInterface::SECURE);
@@ -1086,7 +1086,7 @@ std::vector<std::string> CRPCTable::listCommands() const
 
 std::string HelpExampleCli(string methodname, string args)
 {
-    return "> agouti-cli " + methodname + " " + args + "\n";
+    return "> agoutiold-cli " + methodname + " " + args + "\n";
 }
 
 std::string HelpExampleRpc(string methodname, string args)

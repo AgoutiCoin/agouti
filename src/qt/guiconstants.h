@@ -13,7 +13,7 @@ static const int MODEL_UPDATE_DELAY = 250;
 /* AskPassphraseDialog -- Maximum passphrase length */
 static const int MAX_PASSAGUASE_SIZE = 1024;
 
-/* Agouti GUI -- Size of icons in status bar */
+/* Agoutiold GUI -- Size of icons in status bar */
 static const int STATUSBAR_ICONSIZE = 16;
 
 static const bool DEFAULT_SPLASHSCREEN = true;
@@ -48,9 +48,9 @@ static const int MAX_URI_LENGTH = 255;
 /* Number of frames in spinner animation */
 #define SPINNER_FRAMES 35
 
-#define QAPP_ORG_NAME "Agouti"
-#define QAPP_ORG_DOMAIN "agouti.org"
-#define QAPP_APP_NAME_DEFAULT "Agouti-Qt"
-#define QAPP_APP_NAME_TESTNET "Agouti-Qt-testnet"
+#define QAPP_ORG_NAME "Agoutiold"
+#define QAPP_ORG_DOMAIN "agoutiold.org"
+#define QAPP_APP_NAME_DEFAULT "Agoutiold-Qt"
+#define QAPP_APP_NAME_TESTNET "Agoutiold-Qt-testnet"
 
 #endif // BITCOIN_QT_GUICONSTANTS_H

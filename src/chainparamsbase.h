@@ -9,8 +9,8 @@
 #include <vector>
 
 /**
- * CBaseChainParams defines the base parameters (shared between agouti-cli and agoutid)
- * of a given instance of the Agouti system.
+ * CBaseChainParams defines the base parameters (shared between agoutiold-cli and agoutioldd)
+ * of a given instance of the Agoutiold system.
  */
 class CBaseChainParams
 {

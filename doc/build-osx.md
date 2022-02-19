@@ -1,6 +1,6 @@
 Mac OS X Build Instructions and Notes
 ====================================
-This guide will show you how to build agoutid (headless client) for OSX.
+This guide will show you how to build agoutioldd (headless client) for OSX.
 
 Notes
 -----
@@ -40,14 +40,14 @@ Instructions: Homebrew
 
         brew install autoconf automake berkeley-db4 libtool boost miniupnpc openssl pkg-config protobuf qt5 libzmq
 
-### Building `agoutid`
+### Building `agoutioldd`
 
 1. Clone the github tree to get the source code and go into the directory.
 
-        git clone https://github.com/eastcoastcrypto/Agouti.git
-        cd Agouti
+        git clone https://github.com/eastcoastcrypto/Agoutiold.git
+        cd Agoutiold
 
-2.  Build agoutid:
+2.  Build agoutioldd:
 
         ./autogen.sh
         ./configure --with-gui=qt5
@@ -57,7 +57,7 @@ Instructions: Homebrew
 
         make check
 
-4.  (Optional) You can also install agoutid to your path:
+4.  (Optional) You can also install agoutioldd to your path:
 
         make install
 
@@ -69,7 +69,7 @@ Download Qt Creator from http://www.qt.io/download/. Download the "community edi
 1. Make sure you installed everything through homebrew mentioned above
 2. Do a proper ./configure --with-gui=qt5 --enable-debug
 3. In Qt Creator do "New Project" -> Import Project -> Import Existing Project
-4. Enter "agouti-qt" as project name, enter src/qt as location
+4. Enter "agoutiold-qt" as project name, enter src/qt as location
 5. Leave the file selection as it is
 6. Confirm the "summary page"
 7. In the "Projects" tab select "Manage Kits..."
@@ -79,11 +79,11 @@ Download Qt Creator from http://www.qt.io/download/. Download the "community edi
 
 Creating a release build
 ------------------------
-You can ignore this section if you are building `agoutid` for your own use.
+You can ignore this section if you are building `agoutioldd` for your own use.
 
-agoutid/agouti-cli binaries are not included in the agouti-Qt.app bundle.
+agoutioldd/agoutiold-cli binaries are not included in the agoutiold-Qt.app bundle.
 
-If you are building `agoutid` or `agouti-qt` for others, your build machine should be set up
+If you are building `agoutioldd` or `agoutiold-qt` for others, your build machine should be set up
 as follows for maximum compatibility:
 
 All dependencies should be compiled with these flags:
@@ -92,30 +92,30 @@ All dependencies should be compiled with these flags:
  -arch x86_64
  -isysroot $(xcode-select --print-path)/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.7.sdk
 
-Once dependencies are compiled, see release-process.md for how the Agouti-Qt.app
+Once dependencies are compiled, see release-process.md for how the Agoutiold-Qt.app
 bundle is packaged and signed to create the .dmg disk image that is distributed.
 
 Running
 -------
 
-It's now available at `./agoutid`, provided that you are still in the `src`
+It's now available at `./agoutioldd`, provided that you are still in the `src`
 directory. We have to first create the RPC configuration file, though.
 
-Run `./agoutid` to get the filename where it should be put, or just try these
+Run `./agoutioldd` to get the filename where it should be put, or just try these
 commands:
 
-    echo -e "rpcuser=agoutirpc\nrpcpassword=$(xxd -l 16 -p /dev/urandom)" > "/Users/${USER}/Library/Application Support/Agouti/agouti.conf"
-    chmod 600 "/Users/${USER}/Library/Application Support/Agouti/agouti.conf"
+    echo -e "rpcuser=agoutioldrpc\nrpcpassword=$(xxd -l 16 -p /dev/urandom)" > "/Users/${USER}/Library/Application Support/Agoutiold/agoutiold.conf"
+    chmod 600 "/Users/${USER}/Library/Application Support/Agoutiold/agoutiold.conf"
 
 The next time you run it, it will start downloading the blockchain, but it won't
 output anything while it's doing this. This process may take several hours;
 you can monitor its process by looking at the debug.log file, like this:
 
-    tail -f $HOME/Library/Application\ Support/Agouti/debug.log
+    tail -f $HOME/Library/Application\ Support/Agoutiold/debug.log
 
 Other commands:
 -------
 
-    ./agoutid -daemon # to start the agouti daemon.
-    ./agouti-cli --help  # for a list of command-line options.
-    ./agouti-cli help    # When the daemon is running, to get a list of RPC commands
+    ./agoutioldd -daemon # to start the agoutiold daemon.
+    ./agoutiold-cli --help  # for a list of command-line options.
+    ./agoutiold-cli help    # When the daemon is running, to get a list of RPC commands

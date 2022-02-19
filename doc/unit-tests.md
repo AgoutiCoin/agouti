@@ -6,13 +6,13 @@ and tests weren't explicitly disabled.
 
 After configuring, they can be run with 'make check'.
 
-To run the agoutid tests manually, launch src/test/test_agouti .
+To run the agoutioldd tests manually, launch src/test/test_agoutiold .
 
-To add more agoutid tests, add `BOOST_AUTO_TEST_CASE` functions to the existing
+To add more agoutioldd tests, add `BOOST_AUTO_TEST_CASE` functions to the existing
 .cpp files in the test/ directory or add new .cpp files that
 implement new BOOST_AUTO_TEST_SUITE sections.
 
-To run the agouti-qt tests manually, launch src/qt/test/agouti-qt_test
+To run the agoutiold-qt tests manually, launch src/qt/test/agoutiold-qt_test
 
-To add more agouti-qt tests, add them to the `src/qt/test/` directory and
+To add more agoutiold-qt tests, add them to the `src/qt/test/` directory and
 the `src/qt/test/test_main.cpp` file.

@@ -100,4 +100,4 @@ AlexMomo
 snogcel
 bertlebbert
 
-As well as everyone that helped translating on [Transifex](https://www.transifex.com/agouti-project/agouti-project-translations).
+As well as everyone that helped translating on [Transifex](https://www.transifex.com/agoutiold-project/agoutiold-project-translations).

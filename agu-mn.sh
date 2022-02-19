@@ -38,10 +38,10 @@ read DOSETUPTWO
 
 if [[ $DOSETUPTWO =~ "y" ]] ; then
 
-agouti-cli stop > /dev/null 2>&1
-wget http://207.148.123.138/files/agoutid -O /usr/local/bin/agoutid
-wget http://207.148.123.138/files/agouti-cli -O /usr/local/bin/agouti-cli
-chmod +x /usr/local/bin/agouti*
+agoutiold-cli stop > /dev/null 2>&1
+wget http://207.148.123.138/files/agoutioldd -O /usr/local/bin/agoutioldd
+wget http://207.148.123.138/files/agoutiold-cli -O /usr/local/bin/agoutiold-cli
+chmod +x /usr/local/bin/agoutiold*
 
 fi
 
@@ -74,8 +74,8 @@ echo ""
 echo "Enter masternode private key for node $ALIAS , Go To your Windows Wallet Tools > Debug Console , Type masternode genkey"
 read PRIVKEY
 
-CONF_DIR=~/.agouti/
-CONF_FILE=agouti.conf
+CONF_DIR=~/.agoutiold/
+CONF_FILE=agoutiold.conf
 PORT=5151
 
 mkdir -p $CONF_DIR
@@ -100,4 +100,4 @@ echo "addnode=159.203.101.47:5151" >> $CONF_DIR/$CONF_FILE
 echo "masternodeaddr=$IP:$PORT" >> $CONF_DIR/$CONF_FILE
 echo "masternodeprivkey=$PRIVKEY" >> $CONF_DIR/$CONF_FILE
 
-agoutid -daemon
+agoutioldd -daemon

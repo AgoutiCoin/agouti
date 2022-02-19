@@ -1,0 +1,12 @@
+[Desktop Entry]
+Encoding=UTF-8
+Name=Agoutiold
+Comment=Agoutiold P2P Cryptocurrency
+Comment[fr]=Agoutiold, monnaie virtuelle cryptographique pair à pair
+Comment[tr]=Agoutiold, eşten eşe kriptografik sanal para birimi
+Exec=agoutiold-qt %u
+Terminal=false
+Type=Application
+Icon=agoutiold128
+MimeType=x-scheme-handler/agoutiold;
+Categories=Office;Finance;

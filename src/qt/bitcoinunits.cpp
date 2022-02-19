@@ -41,11 +41,11 @@ QString BitcoinUnits::id(int unit)
 {
     switch (unit) {
     case AGU:
-        return QString("agouti");
+        return QString("agoutiold");
     case mAGU:
-        return QString("magouti");
+        return QString("magoutiold");
     case uAGU:
-        return QString::fromUtf8("uagouti");
+        return QString::fromUtf8("uagoutiold");
     default:
         return QString("???");
     }

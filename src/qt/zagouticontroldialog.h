@@ -1,5 +1,5 @@
 // Copyright (c) 2017 The PIVX developers
-// Copyright (c) 2017-2018 The Agouti developers
+// Copyright (c) 2017-2018 The Agoutiold developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -15,16 +15,16 @@ class CZerocoinMint;
 class WalletModel;
 
 namespace Ui {
-class ZAgoutiControlDialog;
+class ZAgoutioldControlDialog;
 }
 
-class ZAgoutiControlDialog : public QDialog
+class ZAgoutioldControlDialog : public QDialog
 {
     Q_OBJECT
 
 public:
-    explicit ZAgoutiControlDialog(QWidget *parent);
-    ~ZAgoutiControlDialog();
+    explicit ZAgoutioldControlDialog(QWidget *parent);
+    ~ZAgoutioldControlDialog();
 
     void setModel(WalletModel* model);
 
@@ -33,7 +33,7 @@ public:
     static std::vector<CZerocoinMint> GetSelectedMints();
 
 private:
-    Ui::ZAgoutiControlDialog *ui;
+    Ui::ZAgoutioldControlDialog *ui;
     WalletModel* model;
     PrivacyDialog* privacyDialog;
 

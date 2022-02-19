@@ -17,7 +17,7 @@ osx=true
 SIGNER=
 VERSION=
 commit=false
-url=https://github.com/agoutiproject/agouti
+url=https://github.com/agoutioldproject/agoutiold
 proc=2
 mem=2000
 lxc=true
@@ -31,7 +31,7 @@ commitFiles=true
 read -d '' usage <<- EOF
 Usage: $scriptName [-c|u|v|b|s|B|o|h|j|m|] signer version
 
-Run this script from the directory containing the agouti, gitian-builder, gitian.sigs, and agouti-detached-sigs.
+Run this script from the directory containing the agoutiold, gitian-builder, gitian.sigs, and agoutiold-detached-sigs.
 
 Arguments:
 signer          GPG signer to sign each build assert file
@@ -39,7 +39,7 @@ version		Version number, commit, or branch to build. If building a commit or bra
 
 Options:
 -c|--commit	Indicate that the version argument is for a commit or branch
--u|--url	Specify the URL of the repository. Default is https://github.com/agoutiproject/agouti
+-u|--url	Specify the URL of the repository. Default is https://github.com/agoutioldproject/agoutiold
 -v|--verify 	Verify the gitian build
 -b|--build	Do a gitian build
 -s|--sign	Make signed binaries for Windows and Mac OSX
@@ -237,8 +237,8 @@ echo ${COMMIT}
 if [[ $setup = true ]]
 then
     sudo apt-get install ruby apache2 git apt-cacher-ng python-vm-builder qemu-kvm qemu-utils
-    git clone https://github.com/agoutiproject/gitian.sigs.git
-    git clone https://github.com/agoutiproject/agouti-detached-sigs.git
+    git clone https://github.com/agoutioldproject/gitian.sigs.git
+    git clone https://github.com/agoutioldproject/agoutiold-detached-sigs.git
     git clone https://github.com/devrandom/gitian-builder.git
     pushd ./gitian-builder
     if [[ -n "$USE_LXC" ]]
@@ -252,7 +252,7 @@ then
 fi
 
 # Set up build
-pushd ./agouti
+pushd ./agoutiold
 git fetch
 git checkout ${COMMIT}
 popd
@@ -261,7 +261,7 @@ popd
 if [[ $build = true ]]
 then
 	# Make output folder
-	mkdir -p ./agouti-binaries/${VERSION}
+	mkdir -p ./agoutiold-binaries/${VERSION}
 
 	# Build Dependencies
 	echo ""
@@ -271,7 +271,7 @@ then
 	mkdir -p inputs
 	wget -N -P inputs $osslPatchUrl
 	wget -N -P inputs $osslTarUrl
-	make -C ../agouti/depends download SOURCES_PATH=`pwd`/cache/common
+	make -C ../agoutiold/depends download SOURCES_PATH=`pwd`/cache/common
 
 	# Linux
 	if [[ $linux = true ]]
@@ -279,9 +279,9 @@ then
             echo ""
 	    echo "Compiling ${VERSION} Linux"
 	    echo ""
-	    ./bin/gbuild -j ${proc} -m ${mem} --commit agouti=${COMMIT} --url agouti=${url} ../agouti/contrib/gitian-descriptors/gitian-linux.yml
-	    ./bin/gsign -p $signProg --signer $SIGNER --release ${VERSION}-linux --destination ../gitian.sigs/ ../agouti/contrib/gitian-descriptors/gitian-linux.yml
-	    mv build/out/agouti-*.tar.gz build/out/src/agouti-*.tar.gz ../agouti-binaries/${VERSION}
+	    ./bin/gbuild -j ${proc} -m ${mem} --commit agoutiold=${COMMIT} --url agoutiold=${url} ../agoutiold/contrib/gitian-descriptors/gitian-linux.yml
+	    ./bin/gsign -p $signProg --signer $SIGNER --release ${VERSION}-linux --destination ../gitian.sigs/ ../agoutiold/contrib/gitian-descriptors/gitian-linux.yml
+	    mv build/out/agoutiold-*.tar.gz build/out/src/agoutiold-*.tar.gz ../agoutiold-binaries/${VERSION}
 	fi
 	# Windows
 	if [[ $windows = true ]]
@@ -289,10 +289,10 @@ then
 	    echo ""
 	    echo "Compiling ${VERSION} Windows"
 	    echo ""
-	    ./bin/gbuild -j ${proc} -m ${mem} --commit agouti=${COMMIT} --url agouti=${url} ../agouti/contrib/gitian-descriptors/gitian-win.yml
-	    ./bin/gsign -p $signProg --signer $SIGNER --release ${VERSION}-win-unsigned --destination ../gitian.sigs/ ../agouti/contrib/gitian-descriptors/gitian-win.yml
-	    mv build/out/agouti-*-win-unsigned.tar.gz inputs/agouti-win-unsigned.tar.gz
-	    mv build/out/agouti-*.zip build/out/agouti-*.exe ../agouti-binaries/${VERSION}
+	    ./bin/gbuild -j ${proc} -m ${mem} --commit agoutiold=${COMMIT} --url agoutiold=${url} ../agoutiold/contrib/gitian-descriptors/gitian-win.yml
+	    ./bin/gsign -p $signProg --signer $SIGNER --release ${VERSION}-win-unsigned --destination ../gitian.sigs/ ../agoutiold/contrib/gitian-descriptors/gitian-win.yml
+	    mv build/out/agoutiold-*-win-unsigned.tar.gz inputs/agoutiold-win-unsigned.tar.gz
+	    mv build/out/agoutiold-*.zip build/out/agoutiold-*.exe ../agoutiold-binaries/${VERSION}
 	fi
 	# Mac OSX
 	if [[ $osx = true ]]
@@ -300,10 +300,10 @@ then
 	    echo ""
 	    echo "Compiling ${VERSION} Mac OSX"
 	    echo ""
-	    ./bin/gbuild -j ${proc} -m ${mem} --commit agouti=${COMMIT} --url agouti=${url} ../agouti/contrib/gitian-descriptors/gitian-osx.yml
-	    ./bin/gsign -p $signProg --signer $SIGNER --release ${VERSION}-osx-unsigned --destination ../gitian.sigs/ ../agouti/contrib/gitian-descriptors/gitian-osx.yml
-	    mv build/out/agouti-*-osx-unsigned.tar.gz inputs/agouti-osx-unsigned.tar.gz
-	    mv build/out/agouti-*.tar.gz build/out/agouti-*.dmg ../agouti-binaries/${VERSION}
+	    ./bin/gbuild -j ${proc} -m ${mem} --commit agoutiold=${COMMIT} --url agoutiold=${url} ../agoutiold/contrib/gitian-descriptors/gitian-osx.yml
+	    ./bin/gsign -p $signProg --signer $SIGNER --release ${VERSION}-osx-unsigned --destination ../gitian.sigs/ ../agoutiold/contrib/gitian-descriptors/gitian-osx.yml
+	    mv build/out/agoutiold-*-osx-unsigned.tar.gz inputs/agoutiold-osx-unsigned.tar.gz
+	    mv build/out/agoutiold-*.tar.gz build/out/agoutiold-*.dmg ../agoutiold-binaries/${VERSION}
 	fi
 	# AArch64
 	if [[ $aarch64 = true ]]
@@ -311,9 +311,9 @@ then
 	    echo ""
 	    echo "Compiling ${VERSION} AArch64"
 	    echo ""
-	    ./bin/gbuild -j ${proc} -m ${mem} --commit agouti=${COMMIT} --url agouti=${url} ../agouti/contrib/gitian-descriptors/gitian-aarch64.yml
-	    ./bin/gsign -p $signProg --signer $SIGNER --release ${VERSION}-aarch64 --destination ../gitian.sigs/ ../agouti/contrib/gitian-descriptors/gitian-aarch64.yml
-	    mv build/out/agouti-*.tar.gz build/out/src/agouti-*.tar.gz ../agouti-binaries/${VERSION}
+	    ./bin/gbuild -j ${proc} -m ${mem} --commit agoutiold=${COMMIT} --url agoutiold=${url} ../agoutiold/contrib/gitian-descriptors/gitian-aarch64.yml
+	    ./bin/gsign -p $signProg --signer $SIGNER --release ${VERSION}-aarch64 --destination ../gitian.sigs/ ../agoutiold/contrib/gitian-descriptors/gitian-aarch64.yml
+	    mv build/out/agoutiold-*.tar.gz build/out/src/agoutiold-*.tar.gz ../agoutiold-binaries/${VERSION}
 	popd
 
         if [[ $commitFiles = true ]]
@@ -340,32 +340,32 @@ then
 	echo ""
 	echo "Verifying v${VERSION} Linux"
 	echo ""
-	./bin/gverify -v -d ../gitian.sigs/ -r ${VERSION}-linux ../agouti/contrib/gitian-descriptors/gitian-linux.yml
+	./bin/gverify -v -d ../gitian.sigs/ -r ${VERSION}-linux ../agoutiold/contrib/gitian-descriptors/gitian-linux.yml
 	# Windows
 	echo ""
 	echo "Verifying v${VERSION} Windows"
 	echo ""
-	./bin/gverify -v -d ../gitian.sigs/ -r ${VERSION}-win-unsigned ../agouti/contrib/gitian-descriptors/gitian-win.yml
+	./bin/gverify -v -d ../gitian.sigs/ -r ${VERSION}-win-unsigned ../agoutiold/contrib/gitian-descriptors/gitian-win.yml
 	# Mac OSX
 	echo ""
 	echo "Verifying v${VERSION} Mac OSX"
 	echo ""
-	./bin/gverify -v -d ../gitian.sigs/ -r ${VERSION}-osx-unsigned ../agouti/contrib/gitian-descriptors/gitian-osx.yml
+	./bin/gverify -v -d ../gitian.sigs/ -r ${VERSION}-osx-unsigned ../agoutiold/contrib/gitian-descriptors/gitian-osx.yml
 	# AArch64
 	echo ""
 	echo "Verifying v${VERSION} AArch64"
 	echo ""
-	./bin/gverify -v -d ../gitian.sigs/ -r ${VERSION}-aarch64 ../agouti/contrib/gitian-descriptors/gitian-aarch64.yml
+	./bin/gverify -v -d ../gitian.sigs/ -r ${VERSION}-aarch64 ../agoutiold/contrib/gitian-descriptors/gitian-aarch64.yml
 	# Signed Windows
 	echo ""
 	echo "Verifying v${VERSION} Signed Windows"
 	echo ""
-	./bin/gverify -v -d ../gitian.sigs/ -r ${VERSION}-osx-signed ../agouti/contrib/gitian-descriptors/gitian-osx-signer.yml
+	./bin/gverify -v -d ../gitian.sigs/ -r ${VERSION}-osx-signed ../agoutiold/contrib/gitian-descriptors/gitian-osx-signer.yml
 	# Signed Mac OSX
 	echo ""
 	echo "Verifying v${VERSION} Signed Mac OSX"
 	echo ""
-	./bin/gverify -v -d ../gitian.sigs/ -r ${VERSION}-osx-signed ../agouti/contrib/gitian-descriptors/gitian-osx-signer.yml
+	./bin/gverify -v -d ../gitian.sigs/ -r ${VERSION}-osx-signed ../agoutiold/contrib/gitian-descriptors/gitian-osx-signer.yml
 	popd
 fi
 
@@ -380,10 +380,10 @@ then
 	    echo ""
 	    echo "Signing ${VERSION} Windows"
 	    echo ""
-	    ./bin/gbuild -i --commit signature=${COMMIT} ../agouti/contrib/gitian-descriptors/gitian-win-signer.yml
-	    ./bin/gsign -p $signProg --signer $SIGNER --release ${VERSION}-win-signed --destination ../gitian.sigs/ ../agouti/contrib/gitian-descriptors/gitian-win-signer.yml
-	    mv build/out/agouti-*win64-setup.exe ../agouti-binaries/${VERSION}
-	    mv build/out/agouti-*win32-setup.exe ../agouti-binaries/${VERSION}
+	    ./bin/gbuild -i --commit signature=${COMMIT} ../agoutiold/contrib/gitian-descriptors/gitian-win-signer.yml
+	    ./bin/gsign -p $signProg --signer $SIGNER --release ${VERSION}-win-signed --destination ../gitian.sigs/ ../agoutiold/contrib/gitian-descriptors/gitian-win-signer.yml
+	    mv build/out/agoutiold-*win64-setup.exe ../agoutiold-binaries/${VERSION}
+	    mv build/out/agoutiold-*win32-setup.exe ../agoutiold-binaries/${VERSION}
 	fi
 	# Sign Mac OSX
 	if [[ $osx = true ]]
@@ -391,9 +391,9 @@ then
 	    echo ""
 	    echo "Signing ${VERSION} Mac OSX"
 	    echo ""
-	    ./bin/gbuild -i --commit signature=${COMMIT} ../agouti/contrib/gitian-descriptors/gitian-osx-signer.yml
-	    ./bin/gsign -p $signProg --signer $SIGNER --release ${VERSION}-osx-signed --destination ../gitian.sigs/ ../agouti/contrib/gitian-descriptors/gitian-osx-signer.yml
-	    mv build/out/agouti-osx-signed.dmg ../agouti-binaries/${VERSION}/agouti-${VERSION}-osx.dmg
+	    ./bin/gbuild -i --commit signature=${COMMIT} ../agoutiold/contrib/gitian-descriptors/gitian-osx-signer.yml
+	    ./bin/gsign -p $signProg --signer $SIGNER --release ${VERSION}-osx-signed --destination ../gitian.sigs/ ../agoutiold/contrib/gitian-descriptors/gitian-osx-signer.yml
+	    mv build/out/agoutiold-osx-signed.dmg ../agoutiold-binaries/${VERSION}/agoutiold-${VERSION}-osx.dmg
 	fi
 	popd
 

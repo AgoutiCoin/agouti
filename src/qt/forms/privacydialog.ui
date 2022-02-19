@@ -93,7 +93,7 @@
                <item>
                 <widget class="QLabel" name="labelzAGUSyncStatus">
                  <property name="toolTip">
-                  <string>The displayed information may be out of date. Your wallet automatically synchronizes with the Agouti network after a connection is established, but this process has not completed yet.</string>
+                  <string>The displayed information may be out of date. Your wallet automatically synchronizes with the Agoutiold network after a connection is established, but this process has not completed yet.</string>
                  </property>
                  <property name="styleSheet">
                   <string notr="true">QLabel { color: red; }</string>
@@ -145,7 +145,7 @@
                   </size>
                  </property>
                  <property name="toolTip">
-                  <string>Enter an amount of Agouti to convert (mint) to zAgouti</string>
+                  <string>Enter an amount of Agoutiold to convert (mint) to zAgoutiold</string>
                  </property>
                  <property name="text">
                   <string>Mint AGU to zAGU</string>
@@ -178,7 +178,7 @@
                <item>
                 <widget class="QLabel" name="labelzAGUAmountText">
                  <property name="toolTip">
-                  <string>Available Balance are coins (Agouti) which are confirmed and not locked or Masternode collaterals.</string>
+                  <string>Available Balance are coins (Agoutiold) which are confirmed and not locked or Masternode collaterals.</string>
                  </property>
                  <property name="text">
                   <string>Available Balance:</string>
@@ -191,7 +191,7 @@
                <item>
                 <widget class="QLabel" name="labelzAGUAmountValue">
                  <property name="toolTip">
-                  <string>Enter an amount of Agouti to convert to zAgouti</string>
+                  <string>Enter an amount of Agoutiold to convert to zAgoutiold</string>
                  </property>
                  <property name="text">
                   <string>0.000 000 00 AGU</string>
@@ -223,7 +223,7 @@
                   </size>
                  </property>
                  <property name="toolTip">
-                  <string>Reset Zerocoin (zAgouti) Wallet DB. Deletes transactions that did not make it into the blockchain.</string>
+                  <string>Reset Zerocoin (zAgoutiold) Wallet DB. Deletes transactions that did not make it into the blockchain.</string>
                  </property>
                  <property name="text">
                   <string>Reset</string>
@@ -474,21 +474,21 @@
                 <number>0</number>
                </property>
                <item>
-                <widget class="QPushButton" name="pushButtonZAgoutiControl">
+                <widget class="QPushButton" name="pushButtonZAgoutioldControl">
                  <property name="text">
-                  <string>zAgouti Control</string>
+                  <string>zAgoutiold Control</string>
                  </property>
                 </widget>
                </item>
                <item>
-                <widget class="QLabel" name="labelzAgoutiSelected">
+                <widget class="QLabel" name="labelzAgoutioldSelected">
                  <property name="text">
-                  <string>zAgouti Selected:</string>
+                  <string>zAgoutiold Selected:</string>
                  </property>
                 </widget>
                </item>
                <item>
-                <widget class="QLabel" name="labelzAgoutiSelected_int">
+                <widget class="QLabel" name="labelzAgoutioldSelected_int">
                  <property name="text">
                   <string>0</string>
                  </property>
@@ -607,7 +607,7 @@ zAGU are mature when they have more than 20 confirmations AND more than 1 mints 
                <item>
                 <widget class="QLabel" name="labelSecurityLevel">
                  <property name="toolTip">
-                  <string>Security Level for Zerocoin (zAgouti) Transactions. More is better, but needs more time and resources.</string>
+                  <string>Security Level for Zerocoin (zAgoutiold) Transactions. More is better, but needs more time and resources.</string>
                  </property>
                  <property name="frameShape">
                   <enum>QFrame::Box</enum>
@@ -695,7 +695,7 @@ zAGU are mature when they have more than 20 confirmations AND more than 1 mints 
                     </size>
                    </property>
                    <property name="toolTip">
-                    <string>The Agouti address to send the payment to. Creates local payment to yourself when empty.</string>
+                    <string>The Agoutiold address to send the payment to. Creates local payment to yourself when empty.</string>
                    </property>
                   </widget>
                  </item>
@@ -708,7 +708,7 @@ zAGU are mature when they have more than 20 confirmations AND more than 1 mints 
                     <string/>
                    </property>
                    <property name="icon">
-                    <iconset resource="../agouti.qrc">
+                    <iconset resource="../agoutiold.qrc">
                      <normaloff>:/icons/address-book</normaloff>:/icons/address-book</iconset>
                    </property>
                    <property name="shortcut">
@@ -725,7 +725,7 @@ zAGU are mature when they have more than 20 confirmations AND more than 1 mints 
                     <string/>
                    </property>
                    <property name="icon">
-                    <iconset resource="../agouti.qrc">
+                    <iconset resource="../agoutiold.qrc">
                      <normaloff>:/icons/editpaste</normaloff>:/icons/editpaste</iconset>
                    </property>
                    <property name="shortcut">
@@ -895,7 +895,7 @@ zAGU are mature when they have more than 20 confirmations AND more than 1 mints 
                   </font>
                  </property>
                  <property name="toolTip">
-                  <string>Information about the available zAgouti funds.</string>
+                  <string>Information about the available zAgoutiold funds.</string>
                  </property>
                  <property name="text">
                   <string>zAGU Stats:</string>
@@ -2192,7 +2192,7 @@ Immature: confirmed, but less than 1 mints of the same denomination after it was
   </customwidget>
  </customwidgets>
  <resources>
-  <include location="../agouti.qrc"/>
+  <include location="../agoutiold.qrc"/>
  </resources>
  <connections/>
 </ui>

@@ -1,22 +1,22 @@
 // Copyright (c) 2017 The PIVX developers
-// Copyright (c) 2017-2018 The Agouti developers
+// Copyright (c) 2017-2018 The Agoutiold developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "zagouticontroldialog.h"
-#include "ui_zagouticontroldialog.h"
+#include "zagoutioldcontroldialog.h"
+#include "ui_zagoutioldcontroldialog.h"
 
 #include "main.h"
 #include "walletmodel.h"
 
 using namespace std;
 
-std::list<std::string> ZAgoutiControlDialog::listSelectedMints;
-std::list<CZerocoinMint> ZAgoutiControlDialog::listMints;
+std::list<std::string> ZAgoutioldControlDialog::listSelectedMints;
+std::list<CZerocoinMint> ZAgoutioldControlDialog::listMints;
 
-ZAgoutiControlDialog::ZAgoutiControlDialog(QWidget *parent) :
+ZAgoutioldControlDialog::ZAgoutioldControlDialog(QWidget *parent) :
     QDialog(parent),
-    ui(new Ui::ZAgoutiControlDialog),
+    ui(new Ui::ZAgoutioldControlDialog),
     model(0)
 {
     ui->setupUi(this);
@@ -30,19 +30,19 @@ ZAgoutiControlDialog::ZAgoutiControlDialog(QWidget *parent) :
     connect(ui->pushButtonAll, SIGNAL(clicked()), this, SLOT(ButtonAllClicked()));
 }
 
-ZAgoutiControlDialog::~ZAgoutiControlDialog()
+ZAgoutioldControlDialog::~ZAgoutioldControlDialog()
 {
     delete ui;
 }
 
-void ZAgoutiControlDialog::setModel(WalletModel *model)
+void ZAgoutioldControlDialog::setModel(WalletModel *model)
 {
     this->model = model;
     updateList();
 }
 
 //Update the tree widget
-void ZAgoutiControlDialog::updateList()
+void ZAgoutioldControlDialog::updateList()
 {
     // need to prevent the slot from being called each time something is changed
     ui->treeWidget->blockSignals(true);
@@ -134,7 +134,7 @@ void ZAgoutiControlDialog::updateList()
 }
 
 // Update the list when a checkbox is clicked
-void ZAgoutiControlDialog::updateSelection(QTreeWidgetItem* item, int column)
+void ZAgoutioldControlDialog::updateSelection(QTreeWidgetItem* item, int column)
 {
     // only want updates from non top level items that are available to spend
     if (item->parent() && column == COLUMN_CHECKBOX && !item->isDisabled()){
@@ -157,7 +157,7 @@ void ZAgoutiControlDialog::updateSelection(QTreeWidgetItem* item, int column)
 }
 
 // Update the Quantity and Amount display
-void ZAgoutiControlDialog::updateLabels()
+void ZAgoutioldControlDialog::updateLabels()
 {
     int64_t nAmount = 0;
     for (const CZerocoinMint mint : listMints) {
@@ -167,14 +167,14 @@ void ZAgoutiControlDialog::updateLabels()
     }
 
     //update this dialog's labels
-    ui->labelZAgouti_int->setText(QString::number(nAmount));
+    ui->labelZAgoutiold_int->setText(QString::number(nAmount));
     ui->labelQuantity_int->setText(QString::number(listSelectedMints.size()));
 
     //update PrivacyDialog labels
-    privacyDialog->setZAgoutiControlLabels(nAmount, listSelectedMints.size());
+    privacyDialog->setZAgoutioldControlLabels(nAmount, listSelectedMints.size());
 }
 
-std::vector<CZerocoinMint> ZAgoutiControlDialog::GetSelectedMints()
+std::vector<CZerocoinMint> ZAgoutioldControlDialog::GetSelectedMints()
 {
     std::vector<CZerocoinMint> listReturn;
     for (const CZerocoinMint mint : listMints) {
@@ -187,7 +187,7 @@ std::vector<CZerocoinMint> ZAgoutiControlDialog::GetSelectedMints()
 }
 
 // select or deselect all of the mints
-void ZAgoutiControlDialog::ButtonAllClicked()
+void ZAgoutioldControlDialog::ButtonAllClicked()
 {
     ui->treeWidget->blockSignals(true);
     Qt::CheckState state = Qt::Checked;

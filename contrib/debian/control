@@ -1,4 +1,4 @@
-Source: agouti
+Source: agoutiold
 Section: utils
 Priority: optional
 Maintainer: Jonas Smedegaard <dr@jones.dk> ***TODO***
@@ -22,15 +22,15 @@ Build-Depends: debhelper,
  libqrencode-dev,
  libprotobuf-dev, protobuf-compiler
 Standards-Version: 3.9.2
-Homepage: http://www.agouti.org
-Vcs-Git: git://github.com/agoutiproject/Agouti.git
-Vcs-Browser: http://github.com/agoutiproject/Agouti
+Homepage: http://www.agoutiold.org
+Vcs-Git: git://github.com/agoutioldproject/Agoutiold.git
+Vcs-Browser: http://github.com/agoutioldproject/Agoutiold
 
-Package: agoutid
+Package: agoutioldd
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
 Description: peer-to-peer network based digital currency - daemon
- Agouti is a free open source peer-to-peer electronic cash system that
+ Agoutiold is a free open source peer-to-peer electronic cash system that
  is completely decentralized, without the need for a central server or
  trusted parties.  Users hold the crypto keys to their own money and
  transact directly with each other, with the help of a P2P network to
@@ -39,14 +39,14 @@ Description: peer-to-peer network based digital currency - daemon
  Full transaction history is stored locally at each client.  This
  requires 1+ GB of space, slowly growing.
  .
- This package provides the daemon, agoutid, and the CLI tool
- agouti-cli to interact with the daemon.
+ This package provides the daemon, agoutioldd, and the CLI tool
+ agoutiold-cli to interact with the daemon.
 
-Package: agouti-qt
+Package: agoutiold-qt
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
 Description: peer-to-peer network based digital currency - Qt GUI
- Agouti is a free open source peer-to-peer electronic cash system that
+ Agoutiold is a free open source peer-to-peer electronic cash system that
  is completely decentralized, without the need for a central server or
  trusted parties.  Users hold the crypto keys to their own money and
  transact directly with each other, with the help of a P2P network to
@@ -55,4 +55,4 @@ Description: peer-to-peer network based digital currency - Qt GUI
  Full transaction history is stored locally at each client.  This
  requires 1+ GB of space, slowly growing.
  .
- This package provides Agouti-Qt, a GUI for Agouti based on Qt.
+ This package provides Agoutiold-Qt, a GUI for Agoutiold based on Qt.

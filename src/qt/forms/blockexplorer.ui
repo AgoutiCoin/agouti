@@ -168,7 +168,7 @@
   <widget class="QStatusBar" name="statusbar"/>
  </widget>
  <resources>
-  <include location="../agouti.qrc"/>
+  <include location="../agoutiold.qrc"/>
  </resources>
  <connections/>
 </ui>

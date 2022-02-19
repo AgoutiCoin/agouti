@@ -1,0 +1,26 @@
+[Unit]
+Description=Agoutiold's distributed currency daemon
+After=network.target
+
+[Service]
+User=agoutiold
+Group=agoutiold
+
+Type=forking
+PIDFile=/var/lib/agoutioldd/agoutioldd.pid
+
+ExecStart=/usr/bin/agoutioldd -daemon -pid=/var/lib/agoutioldd/agoutioldd.pid \
+          -conf=/etc/agoutiold/agoutiold.conf -datadir=/var/lib/agoutioldd
+
+ExecStop=-/usr/bin/agoutiold-cli -conf=/etc/agoutiold/agoutiold.conf \
+         -datadir=/var/lib/agoutioldd stop
+
+Restart=always
+PrivateTmp=true
+TimeoutStopSec=60s
+TimeoutStartSec=2s
+StartLimitInterval=120s
+StartLimitBurst=5
+
+[Install]
+WantedBy=multi-user.target
