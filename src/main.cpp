@@ -2153,11 +2153,13 @@ int64_t GetMasternodePayment(int nHeight, int64_t blockValue, int nMasternodeCou
 
     if (nHeight < 101) {
 	ret = blockValue * 0;
+    } else if (nHeight >= 2565000) {
+	ret = blockValue * 0.5;
     } else {
 	ret = blockValue * 0.9;
     }
 
-	return ret;
+    return ret;
 }
 
 bool IsInitialBlockDownload()
