@@ -1557,6 +1557,9 @@ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState& state, const CTransa
     if (pfMissingInputs)
         *pfMissingInputs = false;
 
+    if (tx.IsZerocoinSpend() || tx.ContainsZerocoins())
+        return state.DoS(0, error("AcceptToMemoryPool : Zerocoin transactions are permanently disabled"), REJECT_INVALID, "bad-tx");
+
     //Temporarily disable zerocoin for maintenance
     if (GetAdjustedTime() > GetSporkValue(SPORK_16_ZEROCOIN_MAINTENANCE_MODE) && tx.ContainsZerocoins())
         return state.DoS(10, error("AcceptToMemoryPool : Zerocoin transactions are temporarily disabled for maintenance"), REJECT_INVALID, "bad-tx");
@@ -2809,6 +2812,10 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
         if (nSigOps > nMaxBlockSigOps)
             return state.DoS(100, error("ConnectBlock() : too many sigops"),
                 REJECT_INVALID, "bad-blk-sigops");
+
+        if (pindex->nHeight >= 2565000 && (tx.IsZerocoinSpend() || tx.ContainsZerocoins())) {
+            return state.DoS(100, error("ConnectBlock() : zerocoin transactions are permanently disabled"));
+        }
 
         //Temporarily disable zerocoin transactions for maintenance
         if (block.nTime > GetSporkValue(SPORK_16_ZEROCOIN_MAINTENANCE_MODE) && !IsInitialBlockDownload() && tx.ContainsZerocoins())
