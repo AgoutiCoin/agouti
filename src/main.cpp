@@ -5387,6 +5387,12 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
         return true;
     }
 
+    if (chainActive.Height() >= 2565000 && pfrom->nVersion < PROTOCOL_VERSION) {
+        LogPrintf("disconnecting from legacy version after fork (peer %d)\n", pfrom->id);
+        pfrom->fDisconnect = true;
+        return true;
+    }
+
     if (strCommand == "version") {
         // Each connection can only send one version message
         if (pfrom->nVersion != 0) {
