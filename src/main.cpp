@@ -5396,12 +5396,6 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
         return true;
     }
 
-    if (chainActive.Height() >= 2565000 && pfrom->nVersion < PROTOCOL_VERSION) {
-        LogPrintf("disconnecting from legacy version after fork (peer %d)\n", pfrom->id);
-        pfrom->fDisconnect = true;
-        return true;
-    }
-
     if (strCommand == "version") {
         // Each connection can only send one version message
         if (pfrom->nVersion != 0) {
@@ -5442,6 +5436,12 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
             vRecv >> pfrom->fRelayTxes; // set to true after we get the first filter* message
         else
             pfrom->fRelayTxes = true;
+
+        if (chainActive.Height() >= 2565000 && pfrom->nVersion < PROTOCOL_VERSION) {
+        LogPrintf("disconnecting from legacy version after fork (peer %d)\n", pfrom->id);
+        pfrom->fDisconnect = true;
+        return true;
+    }
 
         // Disconnect if we connected to ourself
         if (nNonce == nLocalHostNonce && nNonce > 1) {
