@@ -54,7 +54,8 @@ static void convertSeed6(std::vector<CAddress>& vSeedsOut, const SeedSpec6* data
 // + Contains no strange transactions
 static Checkpoints::MapCheckpoints mapCheckpoints =
     boost::assign::map_list_of
-    (     0, uint256("0x00000b2809bc550fcad87e2a4278952524d2cca9f08fa54ae69bfd25b5834619"));
+    (       0, uint256("0x00000b2809bc550fcad87e2a4278952524d2cca9f08fa54ae69bfd25b5834619"))
+    ( 2565000, uint256("0x856433953db9b9def49558e73f83940d1b811a39f53b97e16ada3e87d18aa954"));
 
 static const Checkpoints::CCheckpointData data = {
     &mapCheckpoints,
@@ -79,15 +80,6 @@ static const Checkpoints::CCheckpointData dataRegtest = {
     1454124731,
     0,
     100};
-
-libzerocoin::ZerocoinParams* CChainParams::Zerocoin_Params() const
-{
-    assert(this);
-    static CBigNum bnTrustedModulus(zerocoinModulus);
-    static libzerocoin::ZerocoinParams ZCParams = libzerocoin::ZerocoinParams(bnTrustedModulus);
-
-    return &ZCParams;
-}
 
 class CMainParams : public CChainParams
 {

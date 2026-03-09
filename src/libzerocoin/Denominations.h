@@ -34,10 +34,39 @@ const std::vector<CoinDenomination> zerocoinDenomList = {ZQ_ONE, ZQ_FIVE, ZQ_TEN
 // possible spends at the moment    /
 const std::vector<int> maxCoinsAtDenom   = {4, 1, 4, 1, 4, 1, 4, 4};
 
-int64_t ZerocoinDenominationToInt(const CoinDenomination& denomination);
-int64_t ZerocoinDenominationToAmount(const CoinDenomination& denomination);
-CoinDenomination IntToZerocoinDenomination(int64_t amount);
-CoinDenomination AmountToZerocoinDenomination(int64_t amount);
+inline int64_t ZerocoinDenominationToInt(const CoinDenomination& denomination)
+{
+    return static_cast<int64_t>(denomination);
+}
+
+inline CoinDenomination IntToZerocoinDenomination(int64_t amount)
+{
+    switch (amount) {
+    case 1:    return ZQ_ONE;
+    case 5:    return ZQ_FIVE;
+    case 10:   return ZQ_TEN;
+    case 50:   return ZQ_FIFTY;
+    case 100:  return ZQ_ONE_HUNDRED;
+    case 500:  return ZQ_FIVE_HUNDRED;
+    case 1000: return ZQ_ONE_THOUSAND;
+    case 5000: return ZQ_FIVE_THOUSAND;
+    default:   return ZQ_ERROR;
+    }
+}
+
+inline int64_t ZerocoinDenominationToAmount(const CoinDenomination& denomination)
+{
+    return ZerocoinDenominationToInt(denomination) * 100000000LL;
+}
+
+inline CoinDenomination AmountToZerocoinDenomination(int64_t amount)
+{
+    int64_t residual = amount - 100000000LL * (amount / 100000000LL);
+    if (residual == 0)
+        return IntToZerocoinDenomination(amount / 100000000LL);
+    return ZQ_ERROR;
+}
+
 CoinDenomination AmountToClosestDenomination(int64_t nAmount, int64_t& nRemaining);
 CoinDenomination get_denomination(std::string denomAmount);
 int64_t get_amount(std::string denomAmount);

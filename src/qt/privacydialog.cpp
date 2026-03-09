@@ -92,14 +92,11 @@ PrivacyDialog::PrivacyDialog(QWidget* parent) : QDialog(parent),
     ui->WarningLabel->hide();    // Explanatory text visible in QT-Creator
     ui->dummyHideWidget->hide(); // Dummy widget with elements to hide
 
-    //temporary disable for maintenance
-    if(GetAdjustedTime() > GetSporkValue(SPORK_16_ZEROCOIN_MAINTENANCE_MODE)) {
-        ui->pushButtonMintzAGU->setEnabled(false);
-        ui->pushButtonMintzAGU->setToolTip(tr("zAGU is currently disabled due to maintenance."));
-
-        ui->pushButtonSpendzAGU->setEnabled(false);
-        ui->pushButtonSpendzAGU->setToolTip(tr("zAGU is currently disabled due to maintenance."));
-    }
+    // Zerocoin permanently disabled
+    ui->pushButtonMintzAGU->setEnabled(false);
+    ui->pushButtonMintzAGU->setToolTip(tr("zAGU is permanently disabled."));
+    ui->pushButtonSpendzAGU->setEnabled(false);
+    ui->pushButtonSpendzAGU->setToolTip(tr("zAGU is permanently disabled."));
 }
 
 PrivacyDialog::~PrivacyDialog()
@@ -146,12 +143,10 @@ void PrivacyDialog::on_pushButtonMintzAGU_clicked()
     if (!walletModel || !walletModel->getOptionsModel())
         return;
 
-    if(GetAdjustedTime() > GetSporkValue(SPORK_16_ZEROCOIN_MAINTENANCE_MODE)) {
-        QMessageBox::information(this, tr("Mint Zerocoin"),
-                                 tr("zAGU is currently undergoing maintenance."), QMessageBox::Ok,
-                                 QMessageBox::Ok);
-        return;
-    }
+    QMessageBox::information(this, tr("Mint Zerocoin"),
+                             tr("zAGU is permanently disabled."), QMessageBox::Ok,
+                             QMessageBox::Ok);
+    return;
 
     // Reset message text
     ui->TEMintStatus->setPlainText(tr("Mint Status: Okay"));
@@ -259,11 +254,9 @@ void PrivacyDialog::on_pushButtonSpendzAGU_clicked()
     if (!walletModel || !walletModel->getOptionsModel() || !pwalletMain)
         return;
 
-    if(GetAdjustedTime() > GetSporkValue(SPORK_16_ZEROCOIN_MAINTENANCE_MODE)) {
-        QMessageBox::information(this, tr("Mint Zerocoin"),
-                                 tr("zAGU is currently undergoing maintenance."), QMessageBox::Ok, QMessageBox::Ok);
-        return;
-    }
+    QMessageBox::information(this, tr("Spend Zerocoin"),
+                             tr("zAGU is permanently disabled."), QMessageBox::Ok, QMessageBox::Ok);
+    return;
 
     // Request unlock if wallet was locked or unlocked for mixing:
     WalletModel::EncryptionStatus encStatus = walletModel->getEncryptionStatus();
