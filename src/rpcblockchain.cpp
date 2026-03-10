@@ -90,6 +90,8 @@ Object blockToJSON(const CBlock& block, const CBlockIndex* blockindex, bool txDe
         result.push_back(Pair("nextblockhash", pnext->GetBlockHash().GetHex()));
 
     result.push_back(Pair("moneysupply",ValueFromAmount(blockindex->nMoneySupply)));
+    result.push_back(Pair("modifier", strprintf("%016x", blockindex->nStakeModifier)));
+    result.push_back(Pair("modifierchecksum", strprintf("%08x", blockindex->nStakeModifierChecksum)));
 
     return result;
 }
