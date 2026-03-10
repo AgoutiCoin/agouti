@@ -32,7 +32,7 @@ using namespace std;
 
 //////////////////////////////////////////////////////////////////////////////
 //
-// AgoutioldMiner
+// AgoutiMiner
 //
 
 //
@@ -428,7 +428,7 @@ bool ProcessBlockFound(CBlock* pblock, CWallet& wallet, CReserveKey& reservekey)
     {
         LOCK(cs_main);
         if (pblock->hashPrevBlock != chainActive.Tip()->GetBlockHash())
-            return error("AgoutioldMiner : generated block is stale");
+            return error("AgoutiMiner : generated block is stale");
     }
 
     // Remove key from key pool
@@ -443,7 +443,7 @@ bool ProcessBlockFound(CBlock* pblock, CWallet& wallet, CReserveKey& reservekey)
     // Process this block the same as if we had received it from another node
     CValidationState state;
     if (!ProcessNewBlock(state, NULL, pblock))
-        return error("AgoutioldMiner : ProcessNewBlock, block not accepted");
+        return error("AgoutiMiner : ProcessNewBlock, block not accepted");
 
     for (CNode* node : vNodes) {
         node->PushInventory(CInv(MSG_BLOCK, pblock->GetHash()));
@@ -458,9 +458,9 @@ bool fGenerateBitcoins = false;
 
 void BitcoinMiner(CWallet* pwallet, bool fProofOfStake)
 {
-    LogPrintf("AgoutioldMiner started\n");
+    LogPrintf("AgoutiMiner started\n");
     SetThreadPriority(THREAD_PRIORITY_LOWEST);
-    RenameThread("agoutiold-miner");
+    RenameThread("agouti-miner");
 
     // Each thread has its own key and counter
     CReserveKey reservekey(pwallet);
@@ -534,7 +534,7 @@ void BitcoinMiner(CWallet* pwallet, bool fProofOfStake)
             continue;
         }
 
-        LogPrintf("Running AgoutioldMiner with %u transactions in block (%u bytes)\n", pblock->vtx.size(),
+        LogPrintf("Running AgoutiMiner with %u transactions in block (%u bytes)\n", pblock->vtx.size(),
             ::GetSerializeSize(*pblock, SER_NETWORK, PROTOCOL_VERSION));
 
         //

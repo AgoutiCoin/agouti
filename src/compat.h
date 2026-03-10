@@ -7,7 +7,7 @@
 #define BITCOIN_COMPAT_H
 
 #if defined(HAVE_CONFIG_H)
-#include "config/agoutiold-config.h"
+#include "config/agouti-config.h"
 #endif
 
 #ifdef WIN32

@@ -1,0 +1,26 @@
+# /etc/conf.d/agoutid: config file for /etc/init.d/agoutid
+
+# Config file location
+#BITCOIND_CONFIGFILE="/etc/agouti/agouti.conf"
+
+# What directory to write pidfile to?  (created and owned by $BITCOIND_USER)
+#BITCOIND_PIDDIR="/var/run/agoutid"
+
+# What filename to give the pidfile
+#BITCOIND_PIDFILE="${BITCOIND_PIDDIR}/agoutid.pid"
+
+# Where to write agoutid data (be mindful that the blockchain is large)
+#BITCOIND_DATADIR="/var/lib/agoutid"
+
+# User and group to own agoutid process
+#BITCOIND_USER="agouti"
+#BITCOIND_GROUP="agouti"
+
+# Path to agoutid executable
+#BITCOIND_BIN="/usr/bin/agoutid"
+
+# Nice value to run agoutid under
+#BITCOIND_NICE=0
+
+# Additional options (avoid -conf and -datadir, use flags above)
+BITCOIND_OPTS=""

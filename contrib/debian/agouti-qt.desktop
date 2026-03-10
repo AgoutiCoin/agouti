@@ -1,0 +1,12 @@
+[Desktop Entry]
+Encoding=UTF-8
+Name=Agouti
+Comment=Agouti P2P Cryptocurrency
+Comment[fr]=Agouti, monnaie virtuelle cryptographique pair à pair
+Comment[tr]=Agouti, eşten eşe kriptografik sanal para birimi
+Exec=agouti-qt %u
+Terminal=false
+Type=Application
+Icon=agouti128
+MimeType=x-scheme-handler/agouti;
+Categories=Office;Finance;

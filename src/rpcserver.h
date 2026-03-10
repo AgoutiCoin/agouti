@@ -96,7 +96,7 @@ public:
 };
 
 /**
- * Agoutiold RPC command dispatcher.
+ * Agouti RPC command dispatcher.
  */
 class CRPCTable
 {

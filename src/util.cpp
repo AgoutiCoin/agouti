@@ -6,7 +6,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #if defined(HAVE_CONFIG_H)
-#include "config/agoutiold-config.h"
+#include "config/agouti-config.h"
 #endif
 
 #include "util.h"
@@ -105,7 +105,7 @@ std::string to_internal(const std::string&);
 
 using namespace std;
 
-// Agoutiold only features
+// Agouti only features
 // Masternode
 bool fMasterNode = false;
 string strMasterNodePrivKey = "";
@@ -120,7 +120,7 @@ int nZeromintPercentage = 10;
 int nPreferredDenom = 0;
 const int64_t AUTOMINT_DELAY = (60 * 5); // Wait at least 5 minutes until Automint starts
 
-int nAnonymizeAgoutioldAmount = 1000;
+int nAnonymizeAgoutiAmount = 1000;
 int nLiquidityProvider = 0;
 /** Spork enforcement enabled time */
 int64_t enforceMasternodePaymentsTime = 4085657524;
@@ -237,8 +237,8 @@ bool LogAcceptCategory(const char* category)
             const vector<string>& categories = mapMultiArgs["-debug"];
             ptrCategory.reset(new set<string>(categories.begin(), categories.end()));
             // thread_specific_ptr automatically deletes the set when the thread ends.
-            // "agoutiold" is a composite category enabling all Agoutiold-related debug output
-            if (ptrCategory->count(string("agoutiold"))) {
+            // "agouti" is a composite category enabling all Agouti-related debug output
+            if (ptrCategory->count(string("agouti"))) {
                 ptrCategory->insert(string("obfuscation"));
                 ptrCategory->insert(string("swiftx"));
                 ptrCategory->insert(string("masternode"));
@@ -403,7 +403,7 @@ static std::string FormatException(std::exception* pex, const char* pszThread)
     char pszModule[MAX_PATH] = "";
     GetModuleFileNameA(NULL, pszModule, sizeof(pszModule));
 #else
-    const char* pszModule = "agoutiold";
+    const char* pszModule = "agouti";
 #endif
     if (pex)
         return strprintf(
@@ -424,13 +424,13 @@ void PrintExceptionContinue(std::exception* pex, const char* pszThread)
 boost::filesystem::path GetDefaultDataDir()
 {
     namespace fs = boost::filesystem;
-// Windows < Vista: C:\Documents and Settings\Username\Application Data\Agoutiold
-// Windows >= Vista: C:\Users\Username\AppData\Roaming\Agoutiold
-// Mac: ~/Library/Application Support/Agoutiold
-// Unix: ~/.agoutiold
+// Windows < Vista: C:\Documents and Settings\Username\Application Data\Agouti
+// Windows >= Vista: C:\Users\Username\AppData\Roaming\Agouti
+// Mac: ~/Library/Application Support/Agouti
+// Unix: ~/.agouti
 #ifdef WIN32
     // Windows
-    return GetSpecialFolderPath(CSIDL_APPDATA) / "Agoutiold";
+    return GetSpecialFolderPath(CSIDL_APPDATA) / "Agouti";
 #else
     fs::path pathRet;
     char* pszHome = getenv("HOME");
@@ -442,10 +442,10 @@ boost::filesystem::path GetDefaultDataDir()
     // Mac
     pathRet /= "Library/Application Support";
     TryCreateDirectory(pathRet);
-    return pathRet / "Agoutiold";
+    return pathRet / "Agouti";
 #else
     // Unix
-    return pathRet / ".agoutiold";
+    return pathRet / ".agouti";
 #endif
 #endif
 }
@@ -537,7 +537,7 @@ void ReadConfigFile(map<string, string>& mapSettingsRet,
 #ifndef WIN32
 boost::filesystem::path GetPidFile()
 {
-    boost::filesystem::path pathPidFile(GetArg("-pid", "agoutioldd.pid"));
+    boost::filesystem::path pathPidFile(GetArg("-pid", "agoutid.pid"));
     if (!pathPidFile.is_complete()) pathPidFile = GetDataDir() / pathPidFile;
     return pathPidFile;
 }

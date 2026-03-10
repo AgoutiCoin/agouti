@@ -15,7 +15,7 @@
 - (NSString *)__bundleIdentifier
 {
     if (self == [NSBundle mainBundle]) {
-        return @"io.agoutiold.Agoutiold-Qt";
+        return @"io.agouti.Agouti-Qt";
     } else {
         return [self __bundleIdentifier];
     }

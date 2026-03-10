@@ -446,10 +446,10 @@ Value getblocktemplate(const Array& params, bool fHelp)
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid mode");
 
     if (vNodes.empty())
-        throw JSONRPCError(RPC_CLIENT_NOT_CONNECTED, "Agoutiold is not connected!");
+        throw JSONRPCError(RPC_CLIENT_NOT_CONNECTED, "Agouti is not connected!");
 
     if (IsInitialBlockDownload())
-        throw JSONRPCError(RPC_CLIENT_IN_INITIAL_DOWNLOAD, "Agoutiold is downloading blocks...");
+        throw JSONRPCError(RPC_CLIENT_IN_INITIAL_DOWNLOAD, "Agouti is downloading blocks...");
 
     static unsigned int nTransactionsUpdatedLast;
 

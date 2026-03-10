@@ -64,15 +64,15 @@ bin_PROGRAMS =
 TESTS =
 
 if BUILD_BITCOIND
-  bin_PROGRAMS += agoutioldd
+  bin_PROGRAMS += agoutid
 endif
 
 if BUILD_BITCOIN_UTILS
-  bin_PROGRAMS += agoutiold-cli agoutiold-tx
+  bin_PROGRAMS += agouti-cli agouti-tx
 endif
 
 .PHONY: FORCE
-# agoutiold core #
+# agouti core #
 BITCOIN_CORE_H = \
   activemasternode.h \
   addrman.h \
@@ -185,7 +185,7 @@ obj/build.h: FORCE
 	  $(abs_top_srcdir)
 libbitcoin_util_a-clientversion.$(OBJEXT): obj/build.h
 
-# server: shared between agoutioldd and agoutiold-qt
+# server: shared between agoutid and agouti-qt
 libbitcoin_server_a_CPPFLAGS = $(BITCOIN_INCLUDES) $(MINIUPNPC_CPPFLAGS) $(EVENT_CFLAGS) $(EVENT_PTHREADS_CFLAGS)
 libbitcoin_server_a_SOURCES = \
   addrman.cpp \
@@ -231,7 +231,7 @@ libbitcoin_zmq_a_SOURCES = \
   zmq/zmqpublishnotifier.cpp
 endif
 
-# wallet: shared between agoutioldd and agoutiold-qt, but only linked
+# wallet: shared between agoutid and agouti-qt, but only linked
 # when wallet enabled
 
 libbitcoin_wallet_a_CFLAGS = -fPIC
@@ -327,7 +327,7 @@ univalue_libbitcoin_univalue_a_SOURCES = \
   univalue/univalue_escapes.h \
   univalue/univalue.h
 
-# common: shared between agoutioldd, and agoutiold-qt and non-server tools
+# common: shared between agoutid, and agouti-qt and non-server tools
 libbitcoin_common_a_CPPFLAGS = $(BITCOIN_INCLUDES)
 libbitcoin_common_a_SOURCES = \
   allocators.cpp \
@@ -385,7 +385,7 @@ libbitcoin_util_a_SOURCES += compat/glibc_compat.cpp
 libbitcoin_util_a_SOURCES += compat/glibcxx_compat.cpp
 endif
 
-# cli: shared between agoutiold-cli and agoutiold-qt
+# cli: shared between agouti-cli and agouti-qt
 libbitcoin_cli_a_CPPFLAGS = $(BITCOIN_INCLUDES)
 libbitcoin_cli_a_SOURCES = \
   rpcclient.cpp \
@@ -395,7 +395,7 @@ nodist_libbitcoin_util_a_SOURCES = $(srcdir)/obj/build.h
 #
 
 # bitcoind binary #
-agoutioldd_LDADD = \
+agoutid_LDADD = \
   $(LIBBITCOIN_SERVER) \
   $(LIBBITCOIN_COMMON) \
   $(LIBBITCOIN_UNIVALUE) \
@@ -406,26 +406,26 @@ agoutioldd_LDADD = \
   $(LIBSECP256K1)
 
 if ENABLE_ZMQ
-agoutioldd_LDADD += $(LIBBITCOIN_ZMQ) $(ZMQ_LIBS)
+agoutid_LDADD += $(LIBBITCOIN_ZMQ) $(ZMQ_LIBS)
 endif
 
 if ENABLE_WALLET
-agoutioldd_LDADD += libbitcoin_wallet.a
+agoutid_LDADD += libbitcoin_wallet.a
 endif
-agoutioldd_SOURCES = agoutioldd.cpp
+agoutid_SOURCES = agoutid.cpp
 #
 
 if TARGET_WINDOWS
-agoutioldd_SOURCES += agoutioldd-res.rc
+agoutid_SOURCES += agoutid-res.rc
 endif
 
-agoutioldd_LDADD += $(BOOST_LIBS) $(BDB_LIBS) $(SSL_LIBS) $(CRYPTO_LIBS) $(MINIUPNPC_LIBS) $(EVENT_PTHREADS_LIBS) $(EVENT_LIBS)
-agoutioldd_CPPFLAGS = $(BITCOIN_INCLUDES)
-agoutioldd_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS)
+agoutid_LDADD += $(BOOST_LIBS) $(BDB_LIBS) $(SSL_LIBS) $(CRYPTO_LIBS) $(MINIUPNPC_LIBS) $(EVENT_PTHREADS_LIBS) $(EVENT_LIBS)
+agoutid_CPPFLAGS = $(BITCOIN_INCLUDES)
+agoutid_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS)
 
 
-# agoutiold-cli binary #
-agoutiold_cli_LDADD = \
+# agouti-cli binary #
+agouti_cli_LDADD = \
   $(LIBBITCOIN_CLI) \
   $(LIBBITCOIN_UTIL) \
   $(BOOST_LIBS) \
@@ -433,14 +433,14 @@ agoutiold_cli_LDADD = \
   $(CRYPTO_LIBS) \
   $(EVENT_LIBS)
 
-agoutiold_cli_SOURCES = \
-  agoutiold-cli.cpp
+agouti_cli_SOURCES = \
+  agouti-cli.cpp
 
-agoutiold_cli_CPPFLAGS = $(BITCOIN_INCLUDES) $(EVENT_CFLAGS)
+agouti_cli_CPPFLAGS = $(BITCOIN_INCLUDES) $(EVENT_CFLAGS)
 #
 
-# agoutiold-tx binary #
-agoutiold_tx_LDADD = \
+# agouti-tx binary #
+agouti_tx_LDADD = \
   $(LIBBITCOIN_UNIVALUE) \
   $(LIBBITCOIN_COMMON) \
   $(LIBBITCOIN_UTIL) \
@@ -449,15 +449,15 @@ agoutiold_tx_LDADD = \
   $(BOOST_LIBS) \
   $(CRYPTO_LIBS)
 
-agoutiold_tx_SOURCES = agoutiold-tx.cpp
-agoutiold_tx_CPPFLAGS = $(BITCOIN_INCLUDES)
+agouti_tx_SOURCES = agouti-tx.cpp
+agouti_tx_CPPFLAGS = $(BITCOIN_INCLUDES)
 #
-agoutiold_tx_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS)
+agouti_tx_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS)
 
 if TARGET_WINDOWS
-agoutiold_cli_SOURCES += agoutiold-cli-res.rc
+agouti_cli_SOURCES += agouti-cli-res.rc
 endif
-agoutiold_cli_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS)
+agouti_cli_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS)
 
 if BUILD_BITCOIN_LIBS
 include_HEADERS = script/bitcoinconsensus.h

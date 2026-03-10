@@ -45,7 +45,7 @@ using namespace boost;
 using namespace std;
 
 #if defined(NDEBUG)
-#error "Agoutiold cannot be compiled without assertions."
+#error "Agouti cannot be compiled without assertions."
 #endif
 
 // 6 comes from OPCODE (1) + vch.size() (1) + BIGNUM size (4)
@@ -2044,7 +2044,7 @@ static CCheckQueue<CScriptCheck> scriptcheckqueue(128);
 
 void ThreadScriptCheck()
 {
-    RenameThread("agoutiold-scriptch");
+    RenameThread("agouti-scriptch");
     scriptcheckqueue.Thread();
 }
 
@@ -3206,7 +3206,7 @@ bool CheckBlock(const CBlock& block, CValidationState& state, bool fCheckPOW, bo
                 nHeight = (*mi).second->nHeight + 1;
         }
 
-        // Agoutiold
+        // Agouti
         // It is entierly possible that we don't have enough data and this could fail
         // (i.e. the block could indeed be valid). Store the block for later consideration
         // but issue an initial reject message.
@@ -4632,7 +4632,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
             return false;
         }
 
-        // Agoutiold: We use certain sporks during IBD, so check to see if they are
+        // Agouti: We use certain sporks during IBD, so check to see if they are
         // available. If not, ask the first peer connected for them.
         if (!pSporkDB->SporkExists(SPORK_14_NEW_PROTOCOL_ENFORCEMENT) &&
             !pSporkDB->SporkExists(SPORK_15_NEW_PROTOCOL_ENFORCEMENT_2) &&

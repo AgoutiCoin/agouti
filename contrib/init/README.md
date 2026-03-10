@@ -1,10 +1,10 @@
 Sample configuration files for:
 
-SystemD: agoutioldd.service
-Upstart: agoutioldd.conf
-OpenRC:  agoutioldd.openrc
-         agoutioldd.openrcconf
-CentOS:  agoutioldd.init
+SystemD: agoutid.service
+Upstart: agoutid.conf
+OpenRC:  agoutid.openrc
+         agoutid.openrcconf
+CentOS:  agoutid.init
 
 have been made available to assist packagers in creating node packages here.
 

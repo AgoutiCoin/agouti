@@ -32,9 +32,9 @@ SendCoinsEntry::SendCoinsEntry(QWidget* parent) : QStackedWidget(parent),
     ui->addAsLabel->setPlaceholderText(tr("Enter a label for this address to add it to your address book"));
 #endif
 
-    // normal agoutiold address field
+    // normal agouti address field
     GUIUtil::setupAddressWidget(ui->payTo, this);
-    // just a label for displaying agoutiold address(es)
+    // just a label for displaying agouti address(es)
     ui->payTo_is->setFont(GUIUtil::bitcoinAddressFont());
 
     // Connect signals

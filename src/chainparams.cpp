@@ -100,7 +100,7 @@ public:
         pchMessageStart[3] = 0x18;
         vAlertPubKey = ParseHex("041db49b9efa6c2b4b11dc319d3faa747587cf5369872072d9d5bbd02328e02f4beb40e176d1f53389e2797a16cd6eecfe7ab39a065a0b7d338d6cc099c1a9874a");
         nDefaultPort = 5151;
-        bnProofOfWorkLimit = ~uint256(0) >> 20; // Agoutiold starting difficulty is 1 / 2^12
+        bnProofOfWorkLimit = ~uint256(0) >> 20; // Agouti starting difficulty is 1 / 2^12
         nSubsidyHalvingInterval = 99999999;
         nMaxReorganizationDepth = 100;
         nMinerThreads = 0;
@@ -188,8 +188,8 @@ public:
         vAlertPubKey = ParseHex("042292b1f401860eea99e1a8a103effbd7e1c013a59a1a3a0c91c9d1997a0bc6f338567278c11344802838c107055bf7c1641eaed61e879245c255a4f5be5746fc");
         nDefaultPort = 7777;
         nMinerThreads = 0;
-        nTargetTimespan = 1 * 60; // Agoutiold: 1 day
-        nTargetSpacing = 1 * 60;  // Agoutiold: 1 minute
+        nTargetTimespan = 1 * 60; // Agouti: 1 day
+        nTargetSpacing = 1 * 60;  // Agouti: 1 minute
         nLastPOWBlock = 200;
         nMaturity = 15;
         nMasternodeCountDrift = 4;
@@ -204,18 +204,18 @@ public:
 
         vFixedSeeds.clear();
         vSeeds.clear();
-        vSeeds.push_back(CDNSSeedData("test-seeds1.agoutiold.net", "test-seeds1.agoutiold.net"));
-        vSeeds.push_back(CDNSSeedData("test-seeds2.agoutiold.net", "test-seeds2.agoutiold.net"));
+        vSeeds.push_back(CDNSSeedData("test-seeds1.agouti.net", "test-seeds1.agouti.net"));
+        vSeeds.push_back(CDNSSeedData("test-seeds2.agouti.net", "test-seeds2.agouti.net"));
 
 
-        base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1, 139); // Testnet agoutiold addresses start with 'x' or 'y'
-        base58Prefixes[SCRIPT_ADDRESS] = std::vector<unsigned char>(1, 19);  // Testnet agoutiold script addresses start with '8' or '9'
+        base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1, 139); // Testnet agouti addresses start with 'x' or 'y'
+        base58Prefixes[SCRIPT_ADDRESS] = std::vector<unsigned char>(1, 19);  // Testnet agouti script addresses start with '8' or '9'
         base58Prefixes[SECRET_KEY] = std::vector<unsigned char>(1, 239);     // Testnet private keys start with '9' or 'c' (Bitcoin defaults)
-        // Testnet agoutiold BIP32 pubkeys start with 'DRKV'
+        // Testnet agouti BIP32 pubkeys start with 'DRKV'
         base58Prefixes[EXT_PUBLIC_KEY] = boost::assign::list_of(0x3a)(0x80)(0x61)(0xa0).convert_to_container<std::vector<unsigned char> >();
-        // Testnet agoutiold BIP32 prvkeys start with 'DRKP'
+        // Testnet agouti BIP32 prvkeys start with 'DRKP'
         base58Prefixes[EXT_SECRET_KEY] = boost::assign::list_of(0x3a)(0x80)(0x58)(0x37).convert_to_container<std::vector<unsigned char> >();
-        // Testnet agoutiold BIP44 coin type is '1' (All coin's testnet default)
+        // Testnet agouti BIP44 coin type is '1' (All coin's testnet default)
         base58Prefixes[EXT_COIN_TYPE] = boost::assign::list_of(0x80)(0x00)(0x00)(0x01).convert_to_container<std::vector<unsigned char> >();
 
         convertSeed6(vFixedSeeds, pnSeed6_test, ARRAYLEN(pnSeed6_test));
@@ -259,8 +259,8 @@ public:
         pchMessageStart[3] = 0xac;
         nSubsidyHalvingInterval = 150;
         nMinerThreads = 1;
-        nTargetTimespan = 24 * 60 * 60; // Agoutiold: 1 day
-        nTargetSpacing = 1 * 60;        // Agoutiold: 1 minutes
+        nTargetTimespan = 24 * 60 * 60; // Agouti: 1 day
+        nTargetSpacing = 1 * 60;        // Agouti: 1 minutes
         bnProofOfWorkLimit = ~uint256(0) >> 1;
         genesis.nTime = 1515524400;
         genesis.nBits = 0x1e0ffff0;

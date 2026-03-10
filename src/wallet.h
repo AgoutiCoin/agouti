@@ -206,7 +206,7 @@ public:
     std::string ResetMintZerocoin(bool fExtendedSearch);
     std::string ResetSpentZerocoin();
     void ReconsiderZerocoins(std::list<CZerocoinMint>& listMintsRestored);
-    void ZAgoutioldBackupWallet();
+    void ZAgoutiBackupWallet();
 
     /** Zerocin entry changed.
     * @note called with lock cs_wallet held.
@@ -309,7 +309,7 @@ public:
         return fEnableZeromint;
     }
 
-    void setZAgoutioldAutoBackups(bool fEnabled)
+    void setZAgoutiAutoBackups(bool fEnabled)
     {
         fBackupMints = fEnabled;
     }
