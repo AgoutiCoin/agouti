@@ -10,6 +10,8 @@
 
 	BITS 64
 
+SECTION .text
+
 %ifidn   __OUTPUT_FORMAT__,macho64
 %define SYM(x) _ %+ x
 %else

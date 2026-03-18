@@ -271,6 +271,18 @@ AC_SUBST(SECP_INCLUDES)
 AC_SUBST(SECP_LIBS)
 AC_SUBST(SECP_TEST_LIBS)
 AC_SUBST(SECP_TEST_INCLUDES)
+if test x"$set_field" = x"64bit_asm"; then
+  AC_PATH_PROG([YASM], [nasm])
+  if test x"$YASM" = x; then
+    AC_MSG_ERROR([nasm is required for the 64bit_asm field implementation but was not found])
+  fi
+  case $host_os in
+    darwin*)  YASM_BINFMT=macho64 ;;
+    mingw*|cygwin*) YASM_BINFMT=win64 ;;
+    *)        YASM_BINFMT=elf64 ;;
+  esac
+fi
+AC_SUBST(YASM)
 AC_SUBST(YASM_BINFMT)
 AM_CONDITIONAL([USE_ASM], [test x"$set_field" == x"64bit_asm"])
 AM_CONDITIONAL([USE_TESTS], [test x"$use_tests" != x"no"])
