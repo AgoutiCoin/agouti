@@ -4745,7 +4745,12 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
 
 
     else if (pfrom->nVersion == 0) {
-        // Must have a version message before anything else
+        // Must have a version message before anything else.
+        // Exception: legacy Agoutiold nodes send getsporks before version; handle it gracefully.
+        if (strCommand == "getsporks") {
+            ProcessSpork(pfrom, strCommand, vRecv);
+            return true;
+        }
         Misbehaving(pfrom->GetId(), 1);
         return false;
     }

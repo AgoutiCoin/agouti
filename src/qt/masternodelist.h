@@ -69,7 +69,7 @@ private Q_SLOTS:
     void on_UpdateButton_clicked();
     void on_createMasternodeButton_clicked();
     void on_editMasternodeButton_clicked();
-    void on_editConfigureMasternode_clicked();
+    void editSelectedMasternode();
     void deleteAlias();
     void copyAlias();
 

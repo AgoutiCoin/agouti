@@ -61,7 +61,7 @@ MasternodeList::MasternodeList(QWidget* parent) : QWidget(parent),
     contextMenu->addAction(copyAliasAction);
     connect(ui->tableWidgetMyMasternodes, SIGNAL(customContextMenuRequested(const QPoint&)), this, SLOT(showContextMenu(const QPoint&)));
     connect(startAliasAction,  SIGNAL(triggered()), this, SLOT(on_startButton_clicked()));
-    connect(editAliasAction,   SIGNAL(triggered()), this, SLOT(on_editConfigureMasternode_clicked()));
+    connect(editAliasAction,   SIGNAL(triggered()), this, SLOT(editSelectedMasternode()));
     connect(deleteAliasAction, SIGNAL(triggered()), this, SLOT(deleteAlias()));
     connect(copyAliasAction,   SIGNAL(triggered()), this, SLOT(copyAlias()));
 
@@ -424,10 +424,10 @@ void MasternodeList::on_createMasternodeButton_clicked()
 
 void MasternodeList::on_editMasternodeButton_clicked()
 {
-    on_editConfigureMasternode_clicked();
+    editSelectedMasternode();
 }
 
-void MasternodeList::on_editConfigureMasternode_clicked()
+void MasternodeList::editSelectedMasternode()
 {
     QItemSelectionModel* selectionModel = ui->tableWidgetMyMasternodes->selectionModel();
     QModelIndexList selected = selectionModel->selectedRows();
