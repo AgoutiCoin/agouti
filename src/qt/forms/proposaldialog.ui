@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>ProposalDialog</class>
+ <widget class="QDialog" name="ProposalDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>580</width>
+    <height>340</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Budget Proposal</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <property name="leftMargin"><number>11</number></property>
+   <property name="topMargin"><number>11</number></property>
+   <property name="rightMargin"><number>11</number></property>
+   <property name="bottomMargin"><number>11</number></property>
+   <property name="spacing"><number>8</number></property>
+   <item>
+    <widget class="QLabel" name="infoLabel">
+     <property name="wordWrap"><bool>true</bool></property>
+     <property name="text">
+      <string>Fill in the form and click OK to send the 50 AGU collateral transaction.  Once the collateral has enough confirmations the Submit button will become active.  Do not close this dialog until the proposal is fully submitted.</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QFormLayout" name="formLayout">
+     <property name="fieldGrowthPolicy">
+      <enum>QFormLayout::AllNonFixedFieldsGrow</enum>
+     </property>
+     <property name="spacing"><number>8</number></property>
+     <item row="0" column="0">
+      <widget class="QLabel" name="label_name">
+       <property name="text"><string>&amp;Name:</string></property>
+       <property name="buddy"><cstring>nameEdit</cstring></property>
+      </widget>
+     </item>
+     <item row="0" column="1">
+      <widget class="QLineEdit" name="nameEdit"/>
+     </item>
+     <item row="1" column="0">
+      <widget class="QLabel" name="label_url">
+       <property name="text"><string>&amp;URL:</string></property>
+       <property name="buddy"><cstring>urlEdit</cstring></property>
+      </widget>
+     </item>
+     <item row="1" column="1">
+      <widget class="QLineEdit" name="urlEdit"/>
+     </item>
+     <item row="2" column="0">
+      <widget class="QLabel" name="label_payments">
+       <property name="text"><string>&amp;Payments:</string></property>
+       <property name="buddy"><cstring>paymentsEdit</cstring></property>
+      </widget>
+     </item>
+     <item row="2" column="1">
+      <widget class="QLineEdit" name="paymentsEdit"/>
+     </item>
+     <item row="3" column="0">
+      <widget class="QLabel" name="label_block">
+       <property name="text"><string>Start &amp;Block:</string></property>
+       <property name="buddy"><cstring>blockEdit</cstring></property>
+      </widget>
+     </item>
+     <item row="3" column="1">
+      <widget class="QLineEdit" name="blockEdit"/>
+     </item>
+     <item row="4" column="0">
+      <widget class="QLabel" name="label_address">
+       <property name="text"><string>&amp;Address:</string></property>
+       <property name="buddy"><cstring>addressEdit</cstring></property>
+      </widget>
+     </item>
+     <item row="4" column="1">
+      <widget class="QLineEdit" name="addressEdit"/>
+     </item>
+     <item row="5" column="0">
+      <widget class="QLabel" name="label_amount">
+       <property name="text"><string>Amount (&amp;AGU/month):</string></property>
+       <property name="buddy"><cstring>amountEdit</cstring></property>
+      </widget>
+     </item>
+     <item row="5" column="1">
+      <widget class="QLineEdit" name="amountEdit"/>
+     </item>
+     <item row="6" column="0">
+      <widget class="QLabel" name="hashLabel">
+       <property name="text"><string>Collateral &amp;TxID:</string></property>
+       <property name="buddy"><cstring>hashEdit</cstring></property>
+      </widget>
+     </item>
+     <item row="6" column="1">
+      <widget class="QLineEdit" name="hashEdit"/>
+     </item>
+     <item row="7" column="1">
+      <widget class="QLabel" name="confirmLabel">
+       <property name="wordWrap"><bool>true</bool></property>
+       <property name="text"><string/></property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="buttonLayout">
+     <item>
+      <spacer name="horizontalSpacer">
+       <property name="orientation"><enum>Qt::Horizontal</enum></property>
+       <property name="sizeHint" stdset="0">
+        <size><width>40</width><height>20</height></size>
+       </property>
+      </spacer>
+     </item>
+     <item>
+      <widget class="QPushButton" name="acceptButton">
+       <property name="text"><string>OK</string></property>
+       <property name="default"><bool>true</bool></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="cancelButton">
+       <property name="text"><string>Cancel</string></property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

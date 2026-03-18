@@ -80,6 +80,7 @@ BitcoinGUI::BitcoinGUI(const NetworkStyle* networkStyle, QWidget* parent) : QMai
                                                                             overviewAction(0),
                                                                             historyAction(0),
                                                                             masternodeAction(0),
+                                                                            governanceAction(0),
                                                                             quitAction(0),
                                                                             sendCoinsAction(0),
                                                                             usedSendingAddressesAction(0),
@@ -348,6 +349,19 @@ void BitcoinGUI::createActions(const NetworkStyle* networkStyle)
         connect(masternodeAction, SIGNAL(triggered()), this, SLOT(gotoMasternodePage()));
     }
 
+    governanceAction = new QAction(tr("&Governance"), this);
+    governanceAction->setStatusTip(tr("Browse and vote on budget proposals"));
+    governanceAction->setToolTip(governanceAction->statusTip());
+    governanceAction->setCheckable(true);
+#ifdef Q_OS_MAC
+    governanceAction->setShortcut(QKeySequence(Qt::CTRL + Qt::Key_7));
+#else
+    governanceAction->setShortcut(QKeySequence(Qt::ALT + Qt::Key_7));
+#endif
+    tabGroup->addAction(governanceAction);
+    connect(governanceAction, SIGNAL(triggered()), this, SLOT(showNormalIfMinimized()));
+    connect(governanceAction, SIGNAL(triggered()), this, SLOT(gotoGovernancePage()));
+
     // These showNormalIfMinimized are needed because Send Coins and Receive Coins
     // can be triggered from the tray menu, and need to show the GUI to be useful.
     connect(overviewAction, SIGNAL(triggered()), this, SLOT(showNormalIfMinimized()));
@@ -539,6 +553,7 @@ void BitcoinGUI::createToolBars()
         if (settings.value("fShowMasternodesTab").toBool()) {
             toolbar->addAction(masternodeAction);
         }
+        toolbar->addAction(governanceAction);
         toolbar->setMovable(false); // remove unused icon in upper left corner
         overviewAction->setChecked(true);
 
@@ -767,6 +782,12 @@ void BitcoinGUI::gotoMasternodePage()
         masternodeAction->setChecked(true);
         if (walletFrame) walletFrame->gotoMasternodePage();
     }
+}
+
+void BitcoinGUI::gotoGovernancePage()
+{
+    governanceAction->setChecked(true);
+    if (walletFrame) walletFrame->gotoGovernancePage();
 }
 
 void BitcoinGUI::gotoReceiveCoinsPage()

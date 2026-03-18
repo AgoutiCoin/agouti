@@ -79,6 +79,9 @@ WalletView::WalletView(QWidget* parent) : QStackedWidget(parent),
     addWidget(sendCoinsPage);
     addWidget(explorerWindow);
 
+    governancePage = new GovernanceList();
+    addWidget(governancePage);
+
     QSettings settings;
     if (settings.value("fShowMasternodesTab").toBool()) {
         masternodeListPage = new MasternodeList();
@@ -213,6 +216,11 @@ void WalletView::gotoMasternodePage()
     if (settings.value("fShowMasternodesTab").toBool()) {
         setCurrentWidget(masternodeListPage);
     }
+}
+
+void WalletView::gotoGovernancePage()
+{
+    setCurrentWidget(governancePage);
 }
 
 void WalletView::gotoReceiveCoinsPage()
