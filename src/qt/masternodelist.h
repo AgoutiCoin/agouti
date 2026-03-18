@@ -67,5 +67,12 @@ private Q_SLOTS:
     void on_startMissingButton_clicked();
     void on_tableWidgetMyMasternodes_itemSelectionChanged();
     void on_UpdateButton_clicked();
+    void on_createMasternodeButton_clicked();
+    void on_editMasternodeButton_clicked();
+    void on_editConfigureMasternode_clicked();
+    void deleteAlias();
+    void copyAlias();
+
+    void openEditConfigureMasternodePage(QString strAlias, QString strIP, QString strPrivKey, QString strTxHash, QString strOutputIndex, int count);
 };
 #endif // MASTERNODELIST_H

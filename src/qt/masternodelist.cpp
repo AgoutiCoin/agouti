@@ -1,6 +1,8 @@
 #include "masternodelist.h"
 #include "ui_masternodelist.h"
 
+#include "configuremasternodepage.h"
+
 #include "activemasternode.h"
 #include "clientmodel.h"
 #include "guiutil.h"
@@ -48,11 +50,20 @@ MasternodeList::MasternodeList(QWidget* parent) : QWidget(parent),
 
     ui->tableWidgetMyMasternodes->setContextMenuPolicy(Qt::CustomContextMenu);
 
-    QAction* startAliasAction = new QAction(tr("Start alias"), this);
+    QAction* startAliasAction  = new QAction(tr("Start alias"), this);
+    QAction* editAliasAction   = new QAction(tr("Edit alias"), this);
+    QAction* deleteAliasAction = new QAction(tr("Delete"), this);
+    QAction* copyAliasAction   = new QAction(tr("Copy alias"), this);
     contextMenu = new QMenu();
     contextMenu->addAction(startAliasAction);
+    contextMenu->addAction(editAliasAction);
+    contextMenu->addAction(deleteAliasAction);
+    contextMenu->addAction(copyAliasAction);
     connect(ui->tableWidgetMyMasternodes, SIGNAL(customContextMenuRequested(const QPoint&)), this, SLOT(showContextMenu(const QPoint&)));
-    connect(startAliasAction, SIGNAL(triggered()), this, SLOT(on_startButton_clicked()));
+    connect(startAliasAction,  SIGNAL(triggered()), this, SLOT(on_startButton_clicked()));
+    connect(editAliasAction,   SIGNAL(triggered()), this, SLOT(on_editConfigureMasternode_clicked()));
+    connect(deleteAliasAction, SIGNAL(triggered()), this, SLOT(deleteAlias()));
+    connect(copyAliasAction,   SIGNAL(triggered()), this, SLOT(copyAlias()));
 
     timer = new QTimer(this);
     connect(timer, SIGNAL(timeout()), this, SLOT(updateNodeList()));
@@ -209,6 +220,15 @@ void MasternodeList::updateMyNodeList(bool fForce)
 
     if (nSecondsTillUpdate > 0 && !fForce) return;
     nTimeMyListUpdated = GetTime();
+
+    // Clear table and reload config from disk so additions/deletions are reflected
+    while (ui->tableWidgetMyMasternodes->rowCount() > 0)
+        ui->tableWidgetMyMasternodes->removeRow(0);
+
+    masternodeConfig.clear();
+    std::string strErr;
+    if (!masternodeConfig.read(strErr))
+        LogPrintf("Error reading masternode configuration file: %s\n", strErr);
 
     ui->tableWidgetMasternodes->setSortingEnabled(false);
     BOOST_FOREACH (CMasternodeConfig::CMasternodeEntry mne, masternodeConfig.getEntries()) {
@@ -393,4 +413,106 @@ void MasternodeList::on_tableWidgetMyMasternodes_itemSelectionChanged()
 void MasternodeList::on_UpdateButton_clicked()
 {
     updateMyNodeList(true);
+}
+
+void MasternodeList::on_createMasternodeButton_clicked()
+{
+    ConfigureMasternodePage dlg(ConfigureMasternodePage::NewConfigureMasternode, this);
+    if (QDialog::Accepted == dlg.exec())
+        updateMyNodeList(true);
+}
+
+void MasternodeList::on_editMasternodeButton_clicked()
+{
+    on_editConfigureMasternode_clicked();
+}
+
+void MasternodeList::on_editConfigureMasternode_clicked()
+{
+    QItemSelectionModel* selectionModel = ui->tableWidgetMyMasternodes->selectionModel();
+    QModelIndexList selected = selectionModel->selectedRows();
+    if (selected.count() == 0) return;
+
+    int nSelectedRow = selected.at(0).row();
+    std::string strAlias = ui->tableWidgetMyMasternodes->item(nSelectedRow, 0)->text().toStdString();
+
+    int count = 0;
+    BOOST_FOREACH (CMasternodeConfig::CMasternodeEntry mne, masternodeConfig.getEntries()) {
+        count++;
+        if (strAlias == mne.getAlias()) {
+            openEditConfigureMasternodePage(
+                QString::fromStdString(mne.getAlias()),
+                QString::fromStdString(mne.getIp()),
+                QString::fromStdString(mne.getPrivKey()),
+                QString::fromStdString(mne.getTxHash()),
+                QString::fromStdString(mne.getOutputIndex()),
+                count);
+            break;
+        }
+    }
+}
+
+void MasternodeList::openEditConfigureMasternodePage(QString strAlias, QString strIP, QString strPrivKey, QString strTxHash, QString strOutputIndex, int count)
+{
+    ConfigureMasternodePage dlg(ConfigureMasternodePage::EditConfigureMasternode, this);
+    dlg.loadAlias(strAlias);
+    dlg.loadIP(strIP);
+    dlg.loadPrivKey(strPrivKey);
+    dlg.loadTxHash(strTxHash);
+    dlg.loadOutputIndex(strOutputIndex);
+    dlg.counter(count);
+    dlg.MNAliasCache(strAlias);
+    if (QDialog::Accepted == dlg.exec())
+        updateMyNodeList(true);
+}
+
+void MasternodeList::deleteAlias()
+{
+    QItemSelectionModel* selectionModel = ui->tableWidgetMyMasternodes->selectionModel();
+    QModelIndexList selected = selectionModel->selectedRows();
+    if (selected.count() == 0) return;
+
+    int nSelectedRow = selected.at(0).row();
+    std::string strAlias = ui->tableWidgetMyMasternodes->item(nSelectedRow, 0)->text().toStdString();
+
+    QMessageBox::StandardButton retval = QMessageBox::question(this, tr("Confirm delete"),
+        tr("Are you sure you want to delete masternode '%1'?").arg(QString::fromStdString(strAlias)),
+        QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
+    if (retval != QMessageBox::Yes) return;
+
+    int count = 0;
+    BOOST_FOREACH (CMasternodeConfig::CMasternodeEntry mne, masternodeConfig.getEntries()) {
+        count++;
+        if (strAlias == mne.getAlias()) {
+            uint256 mnTxHash;
+            mnTxHash.SetHex(mne.getTxHash());
+            int nIndex;
+            if (!mne.castOutputIndex(nIndex))
+                continue;
+            COutPoint outpoint = COutPoint(mnTxHash, nIndex);
+            pwalletMain->UnlockCoin(outpoint);
+            masternodeConfig.deleteAlias(count);
+            masternodeConfig.writeToMasternodeConf();
+            updateMyNodeList(true);
+            break;
+        }
+    }
+}
+
+void MasternodeList::copyAlias()
+{
+    QItemSelectionModel* selectionModel = ui->tableWidgetMyMasternodes->selectionModel();
+    QModelIndexList selected = selectionModel->selectedRows();
+    if (selected.count() == 0) return;
+
+    int nSelectedRow = selected.at(0).row();
+    std::string strAlias = ui->tableWidgetMyMasternodes->item(nSelectedRow, 0)->text().toStdString();
+
+    BOOST_FOREACH (CMasternodeConfig::CMasternodeEntry mne, masternodeConfig.getEntries()) {
+        if (strAlias == mne.getAlias()) {
+            std::string fullLine = mne.getAlias() + " " + mne.getIp() + " " + mne.getPrivKey() + " " + mne.getTxHash() + " " + mne.getOutputIndex();
+            GUIUtil::setClipboard(QString::fromStdString(fullLine));
+            break;
+        }
+    }
 }

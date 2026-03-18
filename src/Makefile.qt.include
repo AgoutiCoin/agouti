@@ -40,6 +40,7 @@ QT_FORMS_UI = \
   qt/forms/editaddressdialog.ui \
   qt/forms/helpmessagedialog.ui \
   qt/forms/intro.ui \
+  qt/forms/configuremasternodepage.ui \
   qt/forms/masternodelist.ui \
   qt/forms/multisenddialog.ui \
   qt/forms/multisigdialog.ui\
@@ -74,6 +75,7 @@ QT_MOC_CPP = \
   qt/moc_intro.cpp \
   qt/moc_macdockiconhandler.cpp \
   qt/moc_macnotificationhandler.cpp \
+  qt/moc_configuremasternodepage.cpp \
   qt/moc_masternodelist.cpp \
   qt/moc_multisenddialog.cpp \
   qt/moc_multisigdialog.cpp\
@@ -146,6 +148,7 @@ BITCOIN_QT_H = \
   qt/intro.h \
   qt/macdockiconhandler.h \
   qt/macnotificationhandler.h \
+  qt/configuremasternodepage.h \
   qt/masternodelist.h \
   qt/multisenddialog.h \
   qt/multisigdialog.h\
@@ -274,6 +277,7 @@ BITCOIN_QT_CPP += \
   qt/coincontroldialog.cpp \
   qt/coincontroltreewidget.cpp \
   qt/obfuscationconfig.cpp \
+  qt/configuremasternodepage.cpp \
   qt/editaddressdialog.cpp \
   qt/masternodelist.cpp \
   qt/multisenddialog.cpp \
