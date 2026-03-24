@@ -297,7 +297,7 @@ bool stakeTargetHit(uint256 hashProofOfStake, int64_t nValueIn, uint256 bnTarget
 }
 
 //instead of looping outside and reinitializing variables many times, we will give a nTimeTx and also search interval so that we can do all the hashing here
-bool CheckStakeKernelHash(unsigned int nBits, const CBlock blockFrom, const CTransaction txPrev, const COutPoint prevout, unsigned int& nTimeTx, unsigned int nHashDrift, bool fCheck, uint256& hashProofOfStake, bool fPrintProofOfStake, int nHeight)
+bool CheckStakeKernelHash(unsigned int nBits, const CBlock& blockFrom, const CTransaction& txPrev, const COutPoint& prevout, unsigned int& nTimeTx, unsigned int nHashDrift, bool fCheck, uint256& hashProofOfStake, bool fPrintProofOfStake, int nHeight)
 {
     //assign new variables to make it easier to read
     int64_t nValueIn = txPrev.vout[prevout.n].nValue;
@@ -374,7 +374,7 @@ bool CheckStakeKernelHash(unsigned int nBits, const CBlock blockFrom, const CTra
 }
 
 // Check kernel hash target and coinstake signature
-bool CheckProofOfStake(const CBlock block, uint256& hashProofOfStake, int nHeight)
+bool CheckProofOfStake(const CBlock& block, uint256& hashProofOfStake, int nHeight)
 {
     const CTransaction tx = block.vtx[1];
     if (!tx.IsCoinStake())
@@ -404,6 +404,10 @@ bool CheckProofOfStake(const CBlock block, uint256& hashProofOfStake, int nHeigh
     CBlock blockprev;
     if (!ReadBlockFromDisk(blockprev, pindex->GetBlockPos()))
         return error("CheckProofOfStake(): INFO: failed to find block");
+
+    // Verify coinstake timestamp matches block timestamp
+    if (!CheckCoinStakeTimestamp(block.nTime, tx.nTime))
+        return error("CheckProofOfStake() : coinstake timestamp mismatch (block=%u tx=%u) on %s", block.nTime, tx.nTime, tx.GetHash().ToString().c_str());
 
     unsigned int nInterval = 0;
     unsigned int nTime = block.nTime;

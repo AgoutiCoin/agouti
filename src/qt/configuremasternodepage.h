@@ -50,6 +50,7 @@ public slots:
     void on_AutoFillOutputs_clicked();
 
 private:
+    bool validateFields();
     void saveCurrentRow();
 
     int counters;

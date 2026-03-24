@@ -2512,8 +2512,12 @@ bool CWallet::CreateCoinStake(const CKeyStore& keystore, unsigned int nBits, int
             continue;
         }
 
-        // Read block header
-        CBlockHeader block = pindex->GetBlockHeader();
+        // Read full block (required by CheckStakeKernelHash signature)
+        CBlock block;
+        if (!ReadBlockFromDisk(block, pindex->GetBlockPos())) {
+            LogPrintf("CreateCoinStake() failed to read block from disk\n");
+            continue;
+        }
 
         bool fKernelFound = false;
         uint256 hashProofOfStake = 0;

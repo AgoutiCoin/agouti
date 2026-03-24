@@ -480,22 +480,24 @@ void MasternodeList::deleteAlias()
         QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
     if (retval != QMessageBox::Yes) return;
 
-    int count = 0;
+    int index = 0;
     BOOST_FOREACH (CMasternodeConfig::CMasternodeEntry mne, masternodeConfig.getEntries()) {
-        count++;
         if (strAlias == mne.getAlias()) {
             uint256 mnTxHash;
             mnTxHash.SetHex(mne.getTxHash());
             int nIndex;
-            if (!mne.castOutputIndex(nIndex))
+            if (!mne.castOutputIndex(nIndex)) {
+                index++;
                 continue;
+            }
             COutPoint outpoint = COutPoint(mnTxHash, nIndex);
             pwalletMain->UnlockCoin(outpoint);
-            masternodeConfig.deleteAlias(count);
+            masternodeConfig.deleteAlias(index);
             masternodeConfig.writeToMasternodeConf();
             updateMyNodeList(true);
             break;
         }
+        index++;
     }
 }
 

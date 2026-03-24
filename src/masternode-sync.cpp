@@ -238,11 +238,15 @@ void CMasternodeSync::Process()
     if (tick++ % MASTERNODE_SYNC_TIMEOUT != 0) return;
 
     if (IsSynced()) {
-        /* 
-            Resync if we lose all masternodes from sleep/wake or failure to sync originally
+        /*
+            Resync if we lose all masternodes from sleep/wake or failure to sync originally.
+            Cap at 3 resets to prevent infinite loop when no masternodes exist on the network.
         */
         if (mnodeman.CountEnabled() == 0) {
-            Reset();
+            if (nCountFailures < 3) {
+                nCountFailures++;
+                Reset();
+            }
         } else {
             return;
         }
@@ -286,12 +290,11 @@ void CMasternodeSync::Process()
 
         //set to synced
         if (RequestedMasternodeAssets == MASTERNODE_SYNC_SPORKS) {
-            if (RequestedMasternodeAttempt >= 2) GetNextAsset();
-
             if (pnode->HasFulfilledRequest("getspork")) continue;
             pnode->FulfilledRequest("getspork");
 
             pnode->PushMessage("getsporks"); //get current network sporks
+            if (RequestedMasternodeAttempt >= 2) GetNextAsset();
             RequestedMasternodeAttempt++;
 
             return;

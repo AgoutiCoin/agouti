@@ -18,9 +18,12 @@ extern unsigned int getIntervalVersion(bool fTestNet);
 // ratio of group interval length between the last group and the first group
 static const int MODIFIER_INTERVAL_RATIO = 3;
 
-// Stake weight cap: maximum effective UTXO value for stake weight calculation (10000 AGU)
+// Stake weight cap: maximum effective UTXO value for stake weight calculation (50000 AGU)
 static const int STAKE_WEIGHT_CAP_HEIGHT = 2700000;
-static const int64_t STAKE_WEIGHT_CAP = 10000 * COIN;
+static const int64_t STAKE_WEIGHT_CAP = 50000 * COIN;
+
+// Height at which PoS future drift is tightened from 180s to 60s
+static const int POS_FUTURE_DRIFT_V2_HEIGHT = 2700000;
 
 // Compute the hash modifier for proof-of-stake
 bool ComputeNextStakeModifier(const CBlockIndex* pindexPrev, uint64_t& nStakeModifier, bool& fGeneratedStakeModifier);
@@ -29,11 +32,11 @@ bool ComputeNextStakeModifier(const CBlockIndex* pindexPrev, uint64_t& nStakeMod
 // Sets hashProofOfStake on success return
 uint256 stakeHash(unsigned int nTimeTx, CDataStream ss, unsigned int prevoutIndex, uint256 prevoutHash, unsigned int nTimeBlockFrom);
 bool stakeTargetHit(uint256 hashProofOfStake, int64_t nValueIn, uint256 bnTargetPerCoinDay, int nHeight);
-bool CheckStakeKernelHash(unsigned int nBits, const CBlock blockFrom, const CTransaction txPrev, const COutPoint prevout, unsigned int& nTimeTx, unsigned int nHashDrift, bool fCheck, uint256& hashProofOfStake, bool fPrintProofOfStake = false, int nHeight = 0);
+bool CheckStakeKernelHash(unsigned int nBits, const CBlock& blockFrom, const CTransaction& txPrev, const COutPoint& prevout, unsigned int& nTimeTx, unsigned int nHashDrift, bool fCheck, uint256& hashProofOfStake, bool fPrintProofOfStake, int nHeight);
 
 // Check kernel hash target and coinstake signature
 // Sets hashProofOfStake on success return
-bool CheckProofOfStake(const CBlock block, uint256& hashProofOfStake, int nHeight);
+bool CheckProofOfStake(const CBlock& block, uint256& hashProofOfStake, int nHeight);
 
 // Check whether the coinstake timestamp meets protocol
 bool CheckCoinStakeTimestamp(int64_t nTimeBlock, int64_t nTimeTx);

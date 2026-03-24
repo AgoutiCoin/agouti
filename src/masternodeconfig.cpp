@@ -89,41 +89,57 @@ void CMasternodeConfig::clear()
     entries.clear();
 }
 
-void CMasternodeConfig::deleteAlias(int count)
+void CMasternodeConfig::deleteAlias(int index)
 {
-    count = count - 1;
-    entries.erase(entries.begin() + count);
+    if (index < 0 || index >= (int)entries.size()) return;
+    entries.erase(entries.begin() + index);
 }
 
-void CMasternodeConfig::writeToMasternodeConf()
+bool CMasternodeConfig::writeToMasternodeConf()
 {
     boost::filesystem::path pathMasternodeConfigFile = GetMasternodeConfigFile();
 
     FILE* configFile = fopen(pathMasternodeConfigFile.string().c_str(), "w");
-    if (!configFile) return;
+    if (!configFile) {
+        LogPrintf("CMasternodeConfig::writeToMasternodeConf -- failed to open %s for writing\n", pathMasternodeConfigFile.string());
+        return false;
+    }
 
     std::string strHeader = "# Masternode config file\n"
                             "# Format: alias IP:port masternodeprivkey collateral_output_txid collateral_output_index\n"
                             "# Example: mn1 127.0.0.2:5151 93HaYBVUCYjEMeeH1Y4sBGLALQZE1Yc1K64xiqgX37tGBDQL8Xg 2bcd3c84c84f87eaa86e4e56834c92927a07f9e18718810b92e0d0324456a67c 0\n";
-    fwrite(strHeader.c_str(), std::strlen(strHeader.c_str()), 1, configFile);
+    if (fwrite(strHeader.c_str(), strHeader.size(), 1, configFile) != 1) {
+        fclose(configFile);
+        LogPrintf("CMasternodeConfig::writeToMasternodeConf -- failed to write header\n");
+        return false;
+    }
 
     std::string masternodeEntries;
-    BOOST_FOREACH (CMasternodeConfig::CMasternodeEntry mne, entries) {
+    BOOST_FOREACH (const CMasternodeConfig::CMasternodeEntry& mne, entries) {
         masternodeEntries += mne.getAlias() + " " + mne.getIp() + " " + mne.getPrivKey() + " " + mne.getTxHash() + " " + mne.getOutputIndex() + "\n";
     }
-    fwrite(masternodeEntries.c_str(), std::strlen(masternodeEntries.c_str()), 1, configFile);
+    if (!masternodeEntries.empty()) {
+        if (fwrite(masternodeEntries.c_str(), masternodeEntries.size(), 1, configFile) != 1) {
+            fclose(configFile);
+            LogPrintf("CMasternodeConfig::writeToMasternodeConf -- failed to write entries\n");
+            return false;
+        }
+    }
     fclose(configFile);
 
     clear();
     std::string strErr;
-    read(strErr);
+    if (!read(strErr))
+        LogPrintf("CMasternodeConfig::writeToMasternodeConf -- re-read failed: %s\n", strErr);
+
+    return true;
 }
 
 bool CMasternodeConfig::CMasternodeEntry::castOutputIndex(int &n)
 {
     try {
         n = std::stoi(outputIndex);
-    } catch (const std::exception e) {
+    } catch (const std::exception& e) {
         LogPrintf("%s: %s on getOutputIndex\n", __func__, e.what());
         return false;
     }
