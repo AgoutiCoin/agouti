@@ -19,11 +19,11 @@ extern unsigned int getIntervalVersion(bool fTestNet);
 static const int MODIFIER_INTERVAL_RATIO = 3;
 
 // Stake weight cap: maximum effective UTXO value for stake weight calculation (50000 AGU)
-static const int STAKE_WEIGHT_CAP_HEIGHT = 2700000;
+static const int STAKE_WEIGHT_CAP_HEIGHT = 2675000;
 static const int64_t STAKE_WEIGHT_CAP = 50000 * COIN;
 
 // Height at which PoS future drift is tightened from 180s to 60s
-static const int POS_FUTURE_DRIFT_V2_HEIGHT = 2700000;
+static const int POS_FUTURE_DRIFT_V2_HEIGHT = 2675000;
 
 // Compute the hash modifier for proof-of-stake
 bool ComputeNextStakeModifier(const CBlockIndex* pindexPrev, uint64_t& nStakeModifier, bool& fGeneratedStakeModifier);

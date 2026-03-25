@@ -300,8 +300,10 @@ void CMasternodePayments::FillBlockPayee(CMutableTransaction& txNew, int64_t nFe
         }
     }
 
-    CAmount blockValue = GetBlockValue(pindexPrev->nHeight);
-    CAmount masternodePayment = GetMasternodePayment(pindexPrev->nHeight, blockValue);
+    int nBlockHeight = pindexPrev->nHeight + 1;
+    int nCalcHeight = (nBlockHeight >= CORRECT_BLOCK_HEIGHT_FORK) ? nBlockHeight : pindexPrev->nHeight;
+    CAmount blockValue = GetBlockValue(nCalcHeight);
+    CAmount masternodePayment = GetMasternodePayment(nCalcHeight, blockValue);
 
     if (hasPayment) {
         if (fProofOfStake) {

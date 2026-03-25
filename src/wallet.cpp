@@ -1150,7 +1150,11 @@ int CWallet::ScanForWalletTransactions(CBlockIndex* pindexStart, bool fUpdate)
                 ShowProgress(_("Rescanning..."), std::max(1, std::min(99, (int)((Checkpoints::GuessVerificationProgress(pindex, false) - dProgressStart) / (dProgressTip - dProgressStart) * 100))));
 
             CBlock block;
-            ReadBlockFromDisk(block, pindex);
+            if (!ReadBlockFromDisk(block, pindex)) {
+                LogPrintf("ScanForWalletTransactions() failed to read block at height %d\n", pindex->nHeight);
+                pindex = chainActive.Next(pindex);
+                continue;
+            }
             BOOST_FOREACH (CTransaction& tx, block.vtx) {
                 if (AddToWalletIfInvolvingMe(tx, &block, fUpdate))
                     ret++;

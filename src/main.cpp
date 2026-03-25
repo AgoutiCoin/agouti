@@ -2257,7 +2257,8 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
     LogPrint("bench", "      - Connect %u transactions: %.2fms (%.3fms/tx, %.3fms/txin) [%.2fs]\n", (unsigned)block.vtx.size(), 0.001 * (nTime1 - nTimeStart), 0.001 * (nTime1 - nTimeStart) / block.vtx.size(), nInputs <= 1 ? 0 : 0.001 * (nTime1 - nTimeStart) / (nInputs - 1), nTimeConnect * 0.000001);
 
     //PoW phase redistributed fees to miner. PoS stage destroys fees.
-    CAmount nExpectedMint = GetBlockValue(pindex->pprev->nHeight);
+    int nCalcHeight = (pindex->nHeight >= CORRECT_BLOCK_HEIGHT_FORK) ? pindex->nHeight : pindex->pprev->nHeight;
+    CAmount nExpectedMint = GetBlockValue(nCalcHeight);
     if (block.IsProofOfWork())
         nExpectedMint += nFees;
 
@@ -3310,13 +3311,6 @@ bool ContextualCheckBlockHeader(const CBlockHeader& block, CValidationState& sta
     if (pcheckpoint && nHeight < pcheckpoint->nHeight)
         return state.DoS(0, error("%s : forked chain older than last checkpoint (height %d)", __func__, nHeight));
 
-    // Height-gated PoS future drift tightening (180s -> 60s)
-    if (block.IsProofOfStake() && nHeight >= POS_FUTURE_DRIFT_V2_HEIGHT) {
-        if (block.GetBlockTime() > GetAdjustedTime() + 60)
-            return state.Invalid(error("%s : PoS block timestamp too far in the future at height %d", __func__, nHeight),
-                REJECT_INVALID, "time-too-new");
-    }
-
     return true;
 }
 
@@ -3350,6 +3344,12 @@ bool ContextualCheckBlock(const CBlock& block, CValidationState& state, CBlockIn
             return state.DoS(10, error("%s : contains a non-final transaction", __func__), REJECT_INVALID, "bad-txns-nonfinal");
         }
 
+    // Height-gated PoS future drift tightening (180s -> 60s)
+    if (block.IsProofOfStake() && nHeight >= POS_FUTURE_DRIFT_V2_HEIGHT) {
+        if (block.GetBlockTime() > GetAdjustedTime() + 60)
+            return state.Invalid(error("%s : PoS block timestamp too far in the future at height %d", __func__, nHeight),
+                REJECT_INVALID, "time-too-new");
+    }
 
     return true;
 }
