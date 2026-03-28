@@ -166,6 +166,11 @@ public:
         nMintRequiredConfirmations = 20;
         nRequiredAccumulation = 1;
         nBudget_Fee_Confirmations = 6; // Number of confirmations for the finalization fee
+
+        /** StakePointer PoS kernel — set nStakePointerForkHeight before mainnet activation */
+        nKernelModifierOffset       = 100;    // must equal nMaxReorganizationDepth
+        nStakePointerValidityPeriod = 4320;   // ~3 days at 60 s/block
+        nStakePointerForkHeight     = 2690000; // TODO: set final value before activating
     }
 
     const Checkpoints::CCheckpointData& Checkpoints() const
@@ -238,6 +243,11 @@ public:
         nStartMasternodePayments = 1420837558; //Fri, 09 Jan 2015 21:05:58 GMT
         nBudget_Fee_Confirmations = 3; // Number of confirmations for the finalization fee. We have to make this very short
                                        // here because we only have a 8 block finalization window on testnet
+
+        /** StakePointer PoS kernel — shorter periods for testnet */
+        nKernelModifierOffset       = 10;
+        nStakePointerValidityPeriod = 200;
+        nStakePointerForkHeight     = 300;
     }
     const Checkpoints::CCheckpointData& Checkpoints() const
     {
@@ -284,6 +294,11 @@ public:
         fRequireStandard = false;
         fMineBlocksOnDemand = true;
         fTestnetToBeDeprecatedFieldRPC = false;
+
+        /** StakePointer PoS kernel — minimal windows for regtest */
+        nKernelModifierOffset       = 5;
+        nStakePointerValidityPeriod = 50;
+        nStakePointerForkHeight     = 201; // activates immediately after PoW ends (nLastPOWBlock=200)
     }
     const Checkpoints::CCheckpointData& Checkpoints() const
     {

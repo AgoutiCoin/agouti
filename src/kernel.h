@@ -22,6 +22,9 @@ static const int MODIFIER_INTERVAL_RATIO = 3;
 static const int STAKE_WEIGHT_CAP_HEIGHT = 2675000;
 static const int64_t STAKE_WEIGHT_CAP = 50000 * COIN;
 
+// Masternode collateral required to produce version-5 PoS blocks
+static const CAmount MASTERNODE_COLLATERAL = 3000 * COIN;
+
 // Height at which PoS future drift is tightened from 180s to 60s
 static const int POS_FUTURE_DRIFT_V2_HEIGHT = 2675000;
 
@@ -37,6 +40,19 @@ bool CheckStakeKernelHash(unsigned int nBits, const CBlock& blockFrom, const CTr
 // Check kernel hash target and coinstake signature
 // Sets hashProofOfStake on success return
 bool CheckProofOfStake(const CBlock& block, uint256& hashProofOfStake, int nHeight);
+
+// Version-5 StakePointer kernel — no coin-age, no tx.nTime.
+// outpoint:   the COutPoint derived from stakePointer.txid / stakePointer.nPos
+// pindexFrom: CBlockIndex of stakePointer.hashBlock
+// pindexPrev: CBlockIndex of the previous block (height - 1)
+// nTimeStake: block.nTime of the new block being assembled / validated
+bool CheckStakePointerKernelHash(
+    unsigned int nBits,
+    const COutPoint& outpoint,
+    const CBlockIndex* pindexFrom,
+    const CBlockIndex* pindexPrev,
+    uint32_t nTimeStake,
+    uint256& hashProofOfStake);
 
 // Check whether the coinstake timestamp meets protocol
 bool CheckCoinStakeTimestamp(int64_t nTimeBlock, int64_t nTimeTx);

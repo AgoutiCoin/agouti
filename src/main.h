@@ -157,6 +157,12 @@ extern std::map<uint256, int64_t> mapRejectedBlocks;
 extern std::map<unsigned int, unsigned int> mapHashedBlocks;
 extern std::set<std::pair<COutPoint, unsigned int> > setStakeSeen;
 
+/** Maps pointer hash → block hash that consumed it.
+ *  Populated in ConnectBlock, pruned in DisconnectBlock.
+ *  Guards against stake-pointer reuse within a single session.
+ *  Note: cleared on restart; full protection relies on canonical chain history. */
+extern std::map<uint256, uint256> mapUsedStakePointers;
+
 /** Best header we've seen so far (used for getheaders queries' starting points). */
 extern CBlockIndex* pindexBestHeader;
 
@@ -449,6 +455,12 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
 bool CheckBlockHeader(const CBlockHeader& block, CValidationState& state, bool fCheckPOW = true);
 bool CheckBlock(const CBlock& block, CValidationState& state, bool fCheckPOW = true, bool fCheckMerkleRoot = true, bool fCheckSig = true);
 bool CheckWork(const CBlock& block, CBlockIndex* const pindexPrev);
+
+/** StakePointer validation helpers (version-5 PoS blocks above nStakePointerForkHeight). */
+bool IsStakePointerUsed(const CBlockIndex* pindexPrev, const COutPoint& outpointPointer);
+bool CheckBlockProofPointer(const CBlockIndex* pindexPrev, int nNewHeight, const CBlock& block,
+                            CPubKey& pubkeyOut, COutPoint& outpointStakePointerOut);
+bool CheckStake(const CBlockIndex* pindexPrev, const CBlock& block, uint256& hashProofOfStake);
 
 /** Context-dependent validity checks */
 bool ContextualCheckBlockHeader(const CBlockHeader& block, CValidationState& state, CBlockIndex* pindexPrev);

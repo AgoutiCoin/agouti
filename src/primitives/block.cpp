@@ -147,9 +147,9 @@ bool CBlock::SignBlock(const CKeyStore& keystore)
     std::vector<valtype> vSolutions;
     txnouttype whichType;
 
-    if(!IsProofOfStake())
+    if (!IsProofOfStake())
     {
-        for(unsigned int i = 0; i < vtx[0].vout.size(); i++)
+        for (unsigned int i = 0; i < vtx[0].vout.size(); i++)
         {
             const CTxOut& txout = vtx[0].vout[i];
 
@@ -158,7 +158,6 @@ bool CBlock::SignBlock(const CKeyStore& keystore)
 
             if (whichType == TX_PUBKEY)
             {
-                // Sign
                 CKeyID keyID;
                 keyID = CKeyID(uint160(vSolutions[0]));
 
@@ -166,9 +165,8 @@ bool CBlock::SignBlock(const CKeyStore& keystore)
                 if (!keystore.GetKey(keyID, key))
                     return false;
 
-                //vector<unsigned char> vchSig;
                 if (!key.Sign(GetHash(), vchBlockSig))
-                     return false;
+                    return false;
 
                 return true;
             }
@@ -176,6 +174,23 @@ bool CBlock::SignBlock(const CKeyStore& keystore)
     }
     else
     {
+        // Version-5 PoS blocks are signed with the stakePointer's proof-of-stake key.
+        if (nVersion >= 5)
+        {
+            if (!stakePointer.pubKeyProofOfStake.IsValid())
+                return false;
+
+            CKey key;
+            if (!keystore.GetKey(stakePointer.pubKeyProofOfStake.GetID(), key))
+                return false;
+
+            if (!key.Sign(GetHash(), vchBlockSig))
+                return false;
+
+            return true;
+        }
+
+        // Legacy PoS: sign with the coinstake output key.
         const CTxOut& txout = vtx[1].vout[1];
 
         if (!Solver(txout.scriptPubKey, whichType, vSolutions))
@@ -183,7 +198,6 @@ bool CBlock::SignBlock(const CKeyStore& keystore)
 
         if (whichType == TX_PUBKEYHASH)
         {
-
             CKeyID keyID;
             keyID = CKeyID(uint160(vSolutions[0]));
 
@@ -191,14 +205,12 @@ bool CBlock::SignBlock(const CKeyStore& keystore)
             if (!keystore.GetKey(keyID, key))
                 return false;
 
-            //vector<unsigned char> vchSig;
             if (!key.Sign(GetHash(), vchBlockSig))
-                 return false;
+                return false;
 
             return true;
-
         }
-        else if(whichType == TX_PUBKEY)
+        else if (whichType == TX_PUBKEY)
         {
             CKeyID keyID;
             keyID = CPubKey(vSolutions[0]).GetID();
@@ -206,9 +218,8 @@ bool CBlock::SignBlock(const CKeyStore& keystore)
             if (!keystore.GetKey(keyID, key))
                 return false;
 
-            //vector<unsigned char> vchSig;
             if (!key.Sign(GetHash(), vchBlockSig))
-                 return false;
+                return false;
 
             return true;
         }
@@ -223,6 +234,16 @@ bool CBlock::CheckBlockSignature() const
     if (IsProofOfWork())
         return vchBlockSig.empty();
 
+    // Version-5 PoS: block is signed with the stakePointer's proof-of-stake key.
+    if (nVersion >= 5)
+    {
+        if (!stakePointer.pubKeyProofOfStake.IsValid())
+            return false;
+
+        return CheckBlockSignature(stakePointer.pubKeyProofOfStake);
+    }
+
+    // Legacy PoS: verify against the coinstake output key.
     std::vector<valtype> vSolutions;
     txnouttype whichType;
 
@@ -236,14 +257,14 @@ bool CBlock::CheckBlockSignature() const
         valtype& vchPubKey = vSolutions[0];
         CPubKey pubkey(vchPubKey);
         if (!pubkey.IsValid())
-          return false;
+            return false;
 
         if (vchBlockSig.empty())
             return false;
 
         return pubkey.Verify(GetHash(), vchBlockSig);
     }
-    else if(whichType == TX_PUBKEYHASH)
+    else if (whichType == TX_PUBKEYHASH)
     {
         valtype& vchPubKey = vSolutions[0];
         CKeyID keyID;
@@ -251,14 +272,24 @@ bool CBlock::CheckBlockSignature() const
         CPubKey pubkey(vchPubKey);
 
         if (!pubkey.IsValid())
-          return false;
+            return false;
 
         if (vchBlockSig.empty())
             return false;
 
         return pubkey.Verify(GetHash(), vchBlockSig);
-
     }
 
     return false;
+}
+
+bool CBlock::CheckBlockSignature(const CPubKey& pubkey) const
+{
+    if (!pubkey.IsValid())
+        return false;
+
+    if (vchBlockSig.empty())
+        return false;
+
+    return pubkey.Verify(GetHash(), vchBlockSig);
 }

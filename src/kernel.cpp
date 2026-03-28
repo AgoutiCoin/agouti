@@ -405,14 +405,56 @@ bool CheckProofOfStake(const CBlock& block, uint256& hashProofOfStake, int nHeig
     if (!ReadBlockFromDisk(blockprev, pindex->GetBlockPos()))
         return error("CheckProofOfStake(): INFO: failed to find block");
 
-    // Verify coinstake timestamp matches block timestamp
-    if (!CheckCoinStakeTimestamp(block.nTime, tx.nTime))
-        return error("CheckProofOfStake() : coinstake timestamp mismatch (block=%u tx=%u) on %s", block.nTime, tx.nTime, tx.GetHash().ToString().c_str());
-
     unsigned int nInterval = 0;
     unsigned int nTime = block.nTime;
     if (!CheckStakeKernelHash(block.nBits, blockprev, txPrev, txin.prevout, nTime, nInterval, true, hashProofOfStake, fDebug, nHeight))
         return error("CheckProofOfStake() : INFO: check kernel failed on coinstake %s, hashProof=%s \n", tx.GetHash().ToString().c_str(), hashProofOfStake.ToString().c_str()); // may occur during initial download or if behind on block chain sync
+
+    return true;
+}
+
+// Version-5 StakePointer kernel hash.
+// Stake modifier = hash of the ancestor block nKernelModifierOffset blocks before tip.
+// Inputs are deterministic: no grinding over time or coin-age is possible.
+bool CheckStakePointerKernelHash(
+    unsigned int nBits,
+    const COutPoint& outpoint,
+    const CBlockIndex* pindexFrom,
+    const CBlockIndex* pindexPrev,
+    uint32_t nTimeStake,
+    uint256& hashProofOfStake)
+{
+    // Derive the stake modifier from a committed ancestor of pindexPrev to prevent
+    // last-second block manipulation.
+    int nModifierHeight = pindexPrev->nHeight - Params().KernelModifierOffset();
+    if (nModifierHeight < 0)
+        return error("CheckStakePointerKernelHash(): modifier height %d below zero", nModifierHeight);
+
+    const CBlockIndex* pindexModifier = pindexPrev->GetAncestor(nModifierHeight);
+    if (!pindexModifier)
+        return error("CheckStakePointerKernelHash(): failed to get modifier ancestor at height %d", nModifierHeight);
+
+    uint256 stakeModifier = pindexModifier->GetBlockHash();
+
+    // Build the kernel data stream — field order is consensus-critical.
+    CDataStream ss(SER_GETHASH, 0);
+    ss << outpoint.hash << outpoint.n << stakeModifier
+       << pindexFrom->GetBlockTime() << nTimeStake;
+    hashProofOfStake = Hash(ss.begin(), ss.end());
+
+    // Target: hashProofOfStake < MASTERNODE_COLLATERAL * bnTarget
+    uint256 bnTarget;
+    bnTarget.SetCompact(nBits);
+
+    if (hashProofOfStake >= uint256((uint64_t)MASTERNODE_COLLATERAL) * bnTarget)
+        return false;
+
+    if (GetBoolArg("-printcoinstake", false))
+        LogPrintf("CheckStakePointerKernelHash(): pass modifier=%s timeBlockFrom=%u timeStake=%u hashProof=%s\n",
+            stakeModifier.ToString().c_str(),
+            pindexFrom->GetBlockTime(),
+            nTimeStake,
+            hashProofOfStake.ToString().c_str());
 
     return true;
 }

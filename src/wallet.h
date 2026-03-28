@@ -188,6 +188,11 @@ private:
 public:
     bool MintableCoins();
     bool SelectStakeCoins(std::set<std::pair<const CWalletTx*, unsigned int> >& setCoins, CAmount nTargetAmount) const;
+
+    /** Find the most recent valid StakePointer for this masternode wallet.
+     *  Returns true and fills stakePointerOut if an eligible, unused pointer is found.
+     *  Returns false if this node is not eligible to stake (no valid MN reward in window). */
+    bool GetStakePointer(StakePointer& stakePointerOut) const;
     bool SelectCoinsDark(CAmount nValueMin, CAmount nValueMax, std::vector<CTxIn>& setCoinsRet, CAmount& nValueRet, int nObfuscationRoundsMin, int nObfuscationRoundsMax) const;
     bool SelectCoinsByDenominations(int nDenom, CAmount nValueMin, CAmount nValueMax, std::vector<CTxIn>& vCoinsRet, std::vector<COutput>& vCoinsRet2, CAmount& nValueRet, int nObfuscationRoundsMin, int nObfuscationRoundsMax);
     bool SelectCoinsDarkDenominated(CAmount nTargetValue, std::vector<CTxIn>& setCoinsRet, CAmount& nValueRet) const;

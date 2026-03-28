@@ -107,6 +107,7 @@ BITCOIN_CORE_H = \
   hash.h \
   init.h \
   kernel.h \
+  stakepointer.h \
   swifttx.h \
   key.h \
   keystore.h \
@@ -340,6 +341,7 @@ libbitcoin_common_a_SOURCES = \
   primitives/block.cpp \
   primitives/transaction.cpp \
   primitives/zerocoin.cpp \
+  stakepointer.cpp \
   core_read.cpp \
   core_write.cpp \
   eccryptoverify.cpp \

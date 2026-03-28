@@ -100,6 +100,11 @@ public:
     int ModifierUpgradeBlock() const { return nModifierUpdateBlock; }
     int LAST_POW_BLOCK() const { return nLastPOWBlock; }
 
+    /** StakePointer PoS kernel (version-5 blocks) **/
+    int KernelModifierOffset() const { return nKernelModifierOffset; }
+    int ValidStakePointerDuration() const { return nStakePointerValidityPeriod; }
+    int StakePointerForkHeight() const { return nStakePointerForkHeight; }
+
 protected:
     CChainParams() {}
 
@@ -141,6 +146,11 @@ protected:
     int nMintRequiredConfirmations;
     int nRequiredAccumulation;
     int64_t nBudget_Fee_Confirmations;
+
+    // StakePointer parameters
+    int nKernelModifierOffset;
+    int nStakePointerValidityPeriod;
+    int nStakePointerForkHeight;
 };
 
 /**

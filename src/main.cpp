@@ -10,6 +10,7 @@
 
 #include "accumulators.h"
 #include "addrman.h"
+#include "base58.h"
 #include "alert.h"
 #include "chainparams.h"
 #include "checkpoints.h"
@@ -60,6 +61,7 @@ CCriticalSection cs_main;
 
 BlockMap mapBlockIndex;
 map<uint256, uint256> mapProofOfStake;
+map<uint256, uint256> mapUsedStakePointers; // pointer hash → consuming block hash
 set<pair<COutPoint, unsigned int> > setStakeSeen;
 map<unsigned int, unsigned int> mapHashedBlocks;
 CChain chainActive;
@@ -2007,6 +2009,18 @@ bool DisconnectBlock(CBlock& block, CValidationState& state, CBlockIndex* pindex
     // move best block pointer to prevout block
     view.SetBestBlock(pindex->pprev->GetBlockHash());
 
+    // Remove stake pointer usage record on reorg (version-5 PoS blocks only).
+    if (block.IsProofOfStake() && block.nVersion >= 5 &&
+        pindex->nHeight >= Params().StakePointerForkHeight() &&
+        !block.stakePointer.IsNull())
+    {
+        CDataStream ss(SER_GETHASH, 0);
+        COutPoint op(block.stakePointer.txid, block.stakePointer.nPos);
+        ss << op;
+        uint256 pointerHash = Hash(ss.begin(), ss.end());
+        mapUsedStakePointers.erase(pointerHash);
+    }
+
     if (pfClean) {
         *pfClean = fClean;
         return true;
@@ -2302,6 +2316,18 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
 
     // add this block to the view's block chain
     view.SetBestBlock(pindex->GetBlockHash());
+
+    // Record stake pointer usage so it cannot be reused (version-5 PoS blocks only).
+    if (block.IsProofOfStake() && block.nVersion >= 5 &&
+        pindex->nHeight >= Params().StakePointerForkHeight() &&
+        !block.stakePointer.IsNull())
+    {
+        CDataStream ss(SER_GETHASH, 0);
+        COutPoint op(block.stakePointer.txid, block.stakePointer.nPos);
+        ss << op;
+        uint256 pointerHash = Hash(ss.begin(), ss.end());
+        mapUsedStakePointers[pointerHash] = block.GetHash();
+    }
 
     int64_t nTime3 = GetTimeMicros();
     nTimeIndex += nTime3 - nTime2;
@@ -3243,6 +3269,168 @@ bool CheckBlock(const CBlock& block, CValidationState& state, bool fCheckPOW, bo
     return true;
 }
 
+// ---------------------------------------------------------------------------
+// StakePointer kernel (version-5 PoS)
+// ---------------------------------------------------------------------------
+
+// Compute a canonical hash for an outpoint used as a stake pointer.
+static uint256 StakePointerHash(const COutPoint& outpoint)
+{
+    CDataStream ss(SER_GETHASH, 0);
+    ss << outpoint;
+    return Hash(ss.begin(), ss.end());
+}
+
+bool IsStakePointerUsed(const CBlockIndex* /*pindex*/, const COutPoint& outpointPointer)
+{
+    uint256 h = StakePointerHash(outpointPointer);
+    return mapUsedStakePointers.count(h) > 0;
+}
+
+// Validate the stakePointer embedded in a version-5 PoS block.
+// pindexPrev: the block immediately before the block being validated (height = nNewHeight - 1).
+// nNewHeight: height of the block being validated.
+// On success, sets pubkeyOut and outpointStakePointerOut for use by CheckStake.
+bool CheckBlockProofPointer(const CBlockIndex* pindexPrev, int nNewHeight, const CBlock& block,
+                            CPubKey& pubkeyOut, COutPoint& outpointStakePointerOut)
+{
+    AssertLockHeld(cs_main);
+
+    const StakePointer& sp = block.stakePointer;
+
+    // 1. hashBlock must be in mapBlockIndex and on the active chain.
+    BlockMap::iterator it = mapBlockIndex.find(sp.hashBlock);
+    if (it == mapBlockIndex.end())
+        return error("CheckBlockProofPointer(): pointer hashBlock %s not in mapBlockIndex",
+                     sp.hashBlock.ToString().c_str());
+
+    CBlockIndex* pindexFrom = it->second;
+
+    if (!chainActive.Contains(pindexFrom))
+        return error("CheckBlockProofPointer(): pointer hashBlock %s not on active chain",
+                     sp.hashBlock.ToString().c_str());
+
+    // 2. Pointer must not have expired (not too old).
+    if (pindexFrom->nHeight < nNewHeight - Params().ValidStakePointerDuration())
+        return error("CheckBlockProofPointer(): pointer too old (from height %d, new height %d, limit %d)",
+                     pindexFrom->nHeight, nNewHeight,
+                     nNewHeight - Params().ValidStakePointerDuration());
+
+    // 3. Pointer must be outside the reorg window (not too recent).
+    if (pindexFrom->nHeight > nNewHeight - Params().MaxReorganizationDepth())
+        return error("CheckBlockProofPointer(): pointer too recent (from height %d, new height %d, min offset %d)",
+                     pindexFrom->nHeight, nNewHeight, Params().MaxReorganizationDepth());
+
+    // 4. Pointer must not be from a budget (superblock) payment block.
+    if (IsSporkActive(SPORK_13_ENABLE_SUPERBLOCKS) && budget.IsBudgetPaymentBlock(pindexFrom->nHeight))
+        return error("CheckBlockProofPointer(): pointer block %d is a budget payment block",
+                     pindexFrom->nHeight);
+
+    // 5. Pointer must not have been used before.
+    COutPoint outpointPointer(sp.txid, sp.nPos);
+    if (IsStakePointerUsed(pindexPrev, outpointPointer))
+        return error("CheckBlockProofPointer(): stake pointer %s:%u already used",
+                     sp.txid.ToString().c_str(), sp.nPos);
+
+    // 6. Read the historical block from disk.
+    CBlock blockFrom;
+    if (!ReadBlockFromDisk(blockFrom, pindexFrom->GetBlockPos()))
+        return error("CheckBlockProofPointer(): failed to read pointer block from disk");
+
+    // Locate the transaction by txid.
+    int txIdx = -1;
+    for (int i = 0; i < (int)blockFrom.vtx.size(); i++) {
+        if (blockFrom.vtx[i].GetHash() == sp.txid) {
+            txIdx = i;
+            break;
+        }
+    }
+    if (txIdx < 0)
+        return error("CheckBlockProofPointer(): txid %s not found in block %s",
+                     sp.txid.ToString().c_str(), sp.hashBlock.ToString().c_str());
+
+    // 7. Check the vout index exists.
+    if (sp.nPos >= blockFrom.vtx[txIdx].vout.size())
+        return error("CheckBlockProofPointer(): nPos %u out of range for tx %s",
+                     sp.nPos, sp.txid.ToString().c_str());
+
+    // 8. Extract destination from the referenced output.
+    CTxDestination dest;
+    if (!ExtractDestination(blockFrom.vtx[txIdx].vout[sp.nPos].scriptPubKey, dest))
+        return error("CheckBlockProofPointer(): failed to extract destination from pointer vout");
+
+    // 9. Address match (Option B): collateral key address must equal the output address.
+    CBitcoinAddress addrCollateral(sp.pubKeyCollateral.GetID());
+    CBitcoinAddress addrOutput(dest);
+    if (!(addrCollateral == addrOutput))
+        return error("CheckBlockProofPointer(): collateral address %s does not match output address %s",
+                     addrCollateral.ToString().c_str(), addrOutput.ToString().c_str());
+
+    // 10. If a sign-over is present, verify it.
+    if (sp.pubKeyProofOfStake != sp.pubKeyCollateral) {
+        if (!sp.VerifyCollateralSignOver())
+            return error("CheckBlockProofPointer(): collateral sign-over verification failed");
+    }
+
+    pubkeyOut               = sp.pubKeyProofOfStake;
+    outpointStakePointerOut = outpointPointer;
+    return true;
+}
+
+// Full StakePointer proof-of-stake validation for a version-5 PoS block.
+// pindexPrev: CBlockIndex of the block immediately preceding the block being validated.
+bool CheckStake(const CBlockIndex* pindexPrev, const CBlock& block, uint256& hashProofOfStake)
+{
+    AssertLockHeld(cs_main);
+
+    int nNewHeight = pindexPrev->nHeight + 1;
+
+    // 1. Coinbase output must be empty for PoS.
+    if (block.vtx[0].vout[0].nValue != 0)
+        return error("CheckStake(): coinbase output not empty for PoS block");
+
+    // 2. Validate the stake pointer; retrieve the signing key and pointer outpoint.
+    CPubKey pubkeyMasternode;
+    COutPoint outpointStakePointer;
+    if (!CheckBlockProofPointer(pindexPrev, nNewHeight, block, pubkeyMasternode, outpointStakePointer))
+        return error("CheckStake(): CheckBlockProofPointer failed");
+
+    // 3. Confirm the referenced output has a positive value (masternode payment sanity check).
+    BlockMap::iterator it = mapBlockIndex.find(block.stakePointer.hashBlock);
+    if (it == mapBlockIndex.end())
+        return error("CheckStake(): pointer block not found");
+
+    CBlock blockFrom;
+    if (!ReadBlockFromDisk(blockFrom, it->second->GetBlockPos()))
+        return error("CheckStake(): failed to read pointer block");
+
+    int txIdx = -1;
+    for (int i = 0; i < (int)blockFrom.vtx.size(); i++) {
+        if (blockFrom.vtx[i].GetHash() == block.stakePointer.txid) {
+            txIdx = i;
+            break;
+        }
+    }
+    if (txIdx < 0 || block.stakePointer.nPos >= blockFrom.vtx[txIdx].vout.size())
+        return error("CheckStake(): invalid pointer txid/nPos");
+
+    if (blockFrom.vtx[txIdx].vout[block.stakePointer.nPos].nValue <= 0)
+        return error("CheckStake(): pointer output value is zero or negative");
+
+    // 4. Verify block signature using the masternode's proof-of-stake key.
+    if (!block.CheckBlockSignature(pubkeyMasternode))
+        return error("CheckStake(): block signature verification failed");
+
+    // 5. Verify the StakePointer kernel hash meets the difficulty target.
+    // pindexPrev IS the "previous block" for the kernel modifier calculation.
+    if (!CheckStakePointerKernelHash(block.nBits, outpointStakePointer,
+                                     it->second, pindexPrev,
+                                     block.nTime, hashProofOfStake))
+        return error("CheckStake(): kernel hash does not meet target");
+
+    return true;
+}
+
 bool CheckWork(const CBlock& block, CBlockIndex* const pindexPrev)
 {
     if (pindexPrev == NULL)
@@ -3267,11 +3455,25 @@ bool CheckWork(const CBlock& block, CBlockIndex* const pindexPrev)
         uint256 hashProofOfStake;
         uint256 hash = block.GetHash();
 
-        if(!CheckProofOfStake(block, hashProofOfStake, pindexPrev->nHeight + 1)) {
-            LogPrintf("WARNING: ProcessBlock(): check proof-of-stake failed for block %s\n", hash.ToString().c_str());
-            return false;
+        int nHeight = pindexPrev->nHeight + 1;
+
+        // Version-5 PoS blocks above the StakePointer fork height use the new kernel.
+        if (block.nVersion >= 5 && nHeight >= Params().StakePointerForkHeight()) {
+            if (!CheckStake(pindexPrev, block, hashProofOfStake)) {
+                LogPrintf("WARNING: CheckWork(): StakePointer check failed for block %s\n",
+                          hash.ToString().c_str());
+                return false;
+            }
+        } else {
+            // Legacy coin-age kernel.
+            if (!CheckProofOfStake(block, hashProofOfStake, nHeight)) {
+                LogPrintf("WARNING: ProcessBlock(): check proof-of-stake failed for block %s\n",
+                          hash.ToString().c_str());
+                return false;
+            }
         }
-        if(!mapProofOfStake.count(hash)) // add to mapProofOfStake
+
+        if (!mapProofOfStake.count(hash))
             mapProofOfStake.insert(make_pair(hash, hashProofOfStake));
     }
 

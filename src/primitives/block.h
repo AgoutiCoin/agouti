@@ -10,6 +10,7 @@
 #include "primitives/transaction.h"
 #include "keystore.h"
 #include "serialize.h"
+#include "stakepointer.h"
 #include "uint256.h"
 
 /** The maximum allowed size for a serialized block, in bytes (network rule) */
@@ -92,6 +93,10 @@ public:
     // ppcoin: block signature - signed by one of the coin base txout[N]'s owner
     std::vector<unsigned char> vchBlockSig;
 
+    // StakePointer — present and serialised only on version-5 PoS blocks.
+    // CONSENSUS RISK: version-gated; changing the condition breaks consensus.
+    StakePointer stakePointer;
+
     // memory only
     mutable CScript payee;
     mutable std::vector<uint256> vMerkleTree;
@@ -113,8 +118,12 @@ public:
     inline void SerializationOp(Stream& s, Operation ser_action, int nType, int nVersion) {
         READWRITE(*(CBlockHeader*)this);
         READWRITE(vtx);
-	if(vtx.size() > 1 && vtx[1].IsCoinStake())
-		READWRITE(vchBlockSig);
+        if (vtx.size() > 1 && vtx[1].IsCoinStake()) {
+            READWRITE(vchBlockSig);
+            // CONSENSUS RISK: stakePointer is only present on version-5 PoS blocks.
+            if (this->nVersion >= 5)
+                READWRITE(stakePointer);
+        }
     }
 
     void SetNull()
@@ -124,6 +133,7 @@ public:
         vMerkleTree.clear();
         payee = CScript();
         vchBlockSig.clear();
+        stakePointer.SetNull();
     }
 
     CBlockHeader GetBlockHeader() const
@@ -152,6 +162,8 @@ public:
 
     bool SignBlock(const CKeyStore& keystore);
     bool CheckBlockSignature() const;
+    // Version-5 overload: verify block signature against a supplied public key.
+    bool CheckBlockSignature(const CPubKey& pubkey) const;
 
     std::pair<COutPoint, unsigned int> GetProofOfStake() const
     {

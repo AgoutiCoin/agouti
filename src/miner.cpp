@@ -107,7 +107,15 @@ CBlockTemplate* CreateNewBlock(const CScript& scriptPubKeyIn, CWallet* pwallet, 
     if (Params().MineBlocksOnDemand())
         pblock->nVersion = GetArg("-blockversion", pblock->nVersion);
 
-    pblock->nVersion = 4;
+    // Set version: 5 for StakePointer PoS blocks, 4 otherwise.
+    {
+        CBlockIndex* pindexTip = chainActive.Tip();
+        int nNewHeight = pindexTip ? pindexTip->nHeight + 1 : 0;
+        if (fProofOfStake && nNewHeight >= Params().StakePointerForkHeight())
+            pblock->nVersion = 5;
+        else
+            pblock->nVersion = 4;
+    }
 
     // Create coinbase tx
     CMutableTransaction txNew;
@@ -483,11 +491,24 @@ void BitcoinMiner(CWallet* pwallet, bool fProofOfStake)
                 continue;
             }
 
-            while (chainActive.Tip()->nTime < 1471482000 || vNodes.empty() || pwallet->IsLocked() || !fMintableCoins || nReserveBalance >= pwallet->GetBalance() || !masternodeSync.IsSynced()) {
-                nLastCoinStakeSearchInterval = 0;
-                MilliSleep(5000);
-                if (!fGenerateBitcoins && !fProofOfStake)
-                    continue;
+            {
+                // Above the StakePointer fork height, masternode eligibility replaces
+                // mintable-coin eligibility.  fMintableCoins is only checked on the legacy path.
+                bool fSpForkActive = (chainActive.Tip()->nHeight + 1 >= Params().StakePointerForkHeight());
+                bool fPassStakeCheck = fSpForkActive || fMintableCoins;
+                bool fPassBalanceCheck = fSpForkActive || (nReserveBalance < pwallet->GetBalance());
+
+                while (chainActive.Tip()->nTime < 1471482000 || vNodes.empty() || pwallet->IsLocked() ||
+                       !fPassStakeCheck || !fPassBalanceCheck || !masternodeSync.IsSynced()) {
+                    nLastCoinStakeSearchInterval = 0;
+                    MilliSleep(5000);
+                    if (!fGenerateBitcoins && !fProofOfStake)
+                        continue;
+                    // Re-evaluate on each iteration.
+                    fSpForkActive     = (chainActive.Tip()->nHeight + 1 >= Params().StakePointerForkHeight());
+                    fPassStakeCheck   = fSpForkActive || fMintableCoins;
+                    fPassBalanceCheck = fSpForkActive || (nReserveBalance < pwallet->GetBalance());
+                }
             }
 
             if (mapHashedBlocks.count(chainActive.Tip()->nHeight)) //search our map of hashed blocks, see if bestblock has been hashed yet
@@ -519,6 +540,21 @@ void BitcoinMiner(CWallet* pwallet, bool fProofOfStake)
 
         //Stake miner main
         if (fProofOfStake) {
+            int nNewHeight = pindexPrev->nHeight + 1;
+            bool fSpForkActive = (nNewHeight >= Params().StakePointerForkHeight());
+
+            if (fSpForkActive) {
+                // StakePointer path: get the pointer and attach it before signing.
+                StakePointer stakePointer;
+                if (!pwallet->GetStakePointer(stakePointer)) {
+                    // This node has no eligible stake pointer; skip block assembly.
+                    MilliSleep(5000);
+                    continue;
+                }
+                pblock->stakePointer = stakePointer;
+                // nVersion was already set to 5 in CreateNewBlock.
+            }
+
             LogPrintf("CPUMiner : proof-of-stake block found %s \n", pblock->GetHash().ToString().c_str());
 
             if (!pblock->SignBlock(*pwallet)) {
