@@ -135,6 +135,12 @@ void CActiveMasternode::ManageStatus()
     if (!SendMasternodePing(errorMessage)) {
         LogPrintf("CActiveMasternode::ManageStatus() - Error on Ping: %s\n", errorMessage);
     }
+
+    // Check for IP change and send lightweight update if needed.
+    if (!SendIPUpdateIfNeeded(errorMessage)) {
+        if (!errorMessage.empty())
+            LogPrintf("CActiveMasternode::ManageStatus() - IP update: %s\n", errorMessage);
+    }
 }
 
 std::string CActiveMasternode::GetStatus()
@@ -236,6 +242,58 @@ bool CActiveMasternode::SendMasternodePing(std::string& errorMessage)
         notCapableReason = errorMessage;
         return false;
     }
+}
+
+bool CActiveMasternode::SendIPUpdateIfNeeded(std::string& errorMessage)
+{
+    if (status != ACTIVE_MASTERNODE_STARTED) return true; // nothing to do
+
+    // Detect current external address.
+    CService serviceNow;
+    if (!strMasterNodeAddr.empty()) {
+        serviceNow = CService(strMasterNodeAddr);
+    } else {
+        if (!GetLocal(serviceNow)) return true; // cannot detect, skip silently
+    }
+
+    // Preserve the port from our original registration.
+    serviceNow = CService(serviceNow.ToStringIP(), service.GetPort());
+
+    // If the address hasn't changed, nothing to do.
+    if (serviceNow == service) return true;
+
+    LogPrintf("CActiveMasternode::SendIPUpdateIfNeeded() - IP change detected: %s -> %s\n",
+              service.ToString(), serviceNow.ToString());
+
+    CPubKey pubKeyMN;
+    CKey keyMN;
+
+    if (!obfuScationSigner.SetKey(strMasterNodePrivKey, errorMessage, keyMN, pubKeyMN)) {
+        errorMessage = "Error upon calling SetKey for IP update: " + errorMessage;
+        return false;
+    }
+
+    CMasternodeIPUpdate mnip(vin, serviceNow);
+    if (!mnip.Sign(keyMN, pubKeyMN)) {
+        errorMessage = "Could not sign IP update message";
+        return false;
+    }
+
+    // Apply locally.
+    CMasternode* pmn = mnodeman.Find(vin);
+    if (pmn != NULL)
+        pmn->addr = serviceNow;
+
+    service = serviceNow;
+
+    // Insert into seen map and relay.
+    mnodeman.mapSeenMasternodeIPUpdate.insert(make_pair(mnip.GetHash(), mnip));
+    mnip.Relay();
+
+    LogPrintf("CActiveMasternode::SendIPUpdateIfNeeded() - Relayed IP update to %s\n",
+              serviceNow.ToString());
+
+    return true;
 }
 
 bool CActiveMasternode::Register(std::string strService, std::string strKeyMasternode, std::string strTxHash, std::string strOutputIndex, std::string& errorMessage)

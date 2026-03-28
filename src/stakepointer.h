@@ -1,3 +1,4 @@
+// Copyright (c) 2018-2022 The Crown developers
 // Copyright (c) 2022 The Agouti developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
@@ -19,6 +20,10 @@
  *  a block inside the reorg window.
  *
  *  CONSENSUS RISK – any change to field order or types alters serialisation.
+ *
+ *  NOTE: serialisation order differs from Crown Core, which serialises
+ *  pubKeyProofOfStake before pubKeyCollateral.  Agouti serialises
+ *  pubKeyCollateral first.  Do not assume wire compatibility with Crown.
  */
 class StakePointer
 {

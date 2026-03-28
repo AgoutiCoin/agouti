@@ -30,6 +30,9 @@ private:
     /// Ping Masternode
     bool SendMasternodePing(std::string& errorMessage);
 
+    /// Detect IP change and send an update message
+    bool SendIPUpdateIfNeeded(std::string& errorMessage);
+
     /// Register any Masternode
     bool Register(CTxIn vin, CService service, CKey key, CPubKey pubKey, CKey keyMasternode, CPubKey pubKeyMasternode, std::string& errorMessage);
 

@@ -287,6 +287,60 @@ The masternode receives its share of the block reward approximately every
 `(total_masternodes × 60 seconds)` on average. Payments are deterministic and rotate
 through the masternode list.
 
+### Running a masternode on a dynamic IP
+
+Starting from protocol version 70052 (activated at block 2,675,000), masternodes
+can run on home broadband connections with dynamic IP addresses.
+
+**How it works:**  The node automatically detects when its external IP changes and
+sends a lightweight `mnipupdate` message to the network.  This message is signed
+with the masternode key (hot key) — the collateral key can remain in cold storage.
+Peers verify the signature and update their masternode list within seconds.
+
+**Requirements:**
+- Port **5151** must be forwarded on the router (this does not change)
+- The node must be able to detect its external IP (UPnP or `-externalip=` flag)
+- Updates are rate-limited to one per 5 minutes
+
+**Configuration — no extra settings needed.**  If the node is already running as
+a masternode, dynamic IP support is automatic.  For routers that do not support
+UPnP, set the external IP explicitly:
+
+```ini
+externalip=<your-current-ip>
+```
+
+Alternatively, use a script or cron job that updates `externalip` and restarts the
+node when the ISP assigns a new address.
+
+**What happens during an IP change:**
+
+1. The node detects the new IP on its next management cycle (~5 minutes).
+2. It signs and relays an `mnipupdate` message to all connected peers.
+3. Peers update the masternode's address in their list.
+4. The masternode retains its payment queue position (scoring is UTXO-based, not
+   IP-based).
+5. StakePointer staking is unaffected — the kernel hash has no IP dependency.
+
+**Limitations:**
+- Peers running protocol < 70052 will not process the update and may lose track
+  of the node.  Once the majority of the network upgrades, this is not an issue.
+- If the IP changes more than once within 5 minutes, only the last change is
+  announced after the rate-limit window.
+
+**Privacy note:**  Masternode IP addresses are public — they are broadcast to the
+entire network and visible via `masternode list`. This is true for all masternodes,
+not just dynamic-IP ones. If you are running from home and do not want your
+residential IP exposed, use one of these options:
+
+- **VPN with a fixed exit IP** — the VPN endpoint is what the network sees, not
+  your home address. This also gives you a stable IP, making the dynamic IP
+  feature unnecessary.
+- **Tor hidden service** — the `.onion` address is cryptographically stable
+  regardless of the underlying IP, and your real address is never revealed.
+  See the Tor documentation for setting up a persistent hidden service on
+  port 5151.
+
 ---
 
 ## 7. Governance and Budget System
@@ -374,11 +428,40 @@ transaction. No manual action is required.
 
 ## 8. StakePointer Guide
 
+### What is StakePointer? (simple explanation)
+
+Before StakePointer, anyone with coins in a wallet could stake — the more coins
+and the longer they sat untouched, the better the chance of finding a block. This
+led to "grinding" attacks where people could game the system.
+
+StakePointer changes this: **only masternodes can stake**. Your 3,000 AGU
+collateral stays locked in your local (home) wallet — it never moves to the
+server. The masternode VPS just holds a hot key that proves it is authorised to
+stake on your behalf.
+
+**Where does the money need to be?**
+
+| What | Where | Why |
+|------|-------|-----|
+| 3,000 AGU collateral | Your local wallet (at home) | Stays locked; never moves |
+| Masternode hot key | VPS / server | Signs blocks; holds no funds |
+| Staking rewards | Your local wallet | Paid to the collateral address |
+
+You do **not** need to send coins to the server. You do **not** need to keep
+your home wallet running. The masternode stakes automatically as long as it is
+online, registered, and has received at least one block reward in the last
+~3 days.
+
+Any other AGU in your wallet is irrelevant to staking. You cannot stake with
+loose coins — only masternodes stake. One masternode = one staking slot.
+
+---
+
+### How it works (technical detail)
+
 The StakePointer protocol activates at block **2,690,000** on mainnet. After this
 height, each Proof-of-Stake block must be signed by a masternode operator rather than
 by an ordinary staking UTXO. Coin-age grinding is eliminated.
-
-### How it works
 
 1. The block must include a `StakePointer` structure identifying:
    - A recent masternode reward output (`txid`, `nPos`) from the block at `hashBlock`,
@@ -405,15 +488,15 @@ by an ordinary staking UTXO. Coin-age grinding is eliminated.
 
 ### Configuration
 
-Add to `agouti.conf` on the staking/masternode server:
+Staking is enabled by default for masternodes — no extra configuration is needed.
+The wallet selects a valid stake pointer automatically.
+
+If for any reason you need to temporarily disable staking (e.g. debugging), add
+to `agouti.conf`:
 
 ```ini
-staking=1
-reservebalance=0
+staking=0
 ```
-
-No separate StakePointer configuration is required once the node is a running
-masternode. The wallet selects a valid pointer automatically.
 
 ### Staking workflow (post-fork)
 
@@ -445,9 +528,8 @@ The `stakePointer` field is only serialised when `nVersion >= 5`.
 ### Upgrade path for existing masternodes
 
 1. Update to this release.
-2. Ensure `staking=1` is in `agouti.conf`.
-3. At block 2,690,000 the node begins StakePointer staking automatically.
-4. No collateral transaction or restart is required.
+2. At block 2,690,000 the node begins StakePointer staking automatically.
+3. No collateral transaction, configuration change, or restart is required.
 
 ---
 

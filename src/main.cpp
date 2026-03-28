@@ -3395,34 +3395,15 @@ bool CheckStake(const CBlockIndex* pindexPrev, const CBlock& block, uint256& has
     if (!CheckBlockProofPointer(pindexPrev, nNewHeight, block, pubkeyMasternode, outpointStakePointer))
         return error("CheckStake(): CheckBlockProofPointer failed");
 
-    // 3. Confirm the referenced output has a positive value (masternode payment sanity check).
+    // 3. Verify block signature using the masternode's proof-of-stake key.
+    if (!block.CheckBlockSignature(pubkeyMasternode))
+        return error("CheckStake(): block signature verification failed");
+
+    // 4. Verify the StakePointer kernel hash meets the difficulty target.
     BlockMap::iterator it = mapBlockIndex.find(block.stakePointer.hashBlock);
     if (it == mapBlockIndex.end())
         return error("CheckStake(): pointer block not found");
 
-    CBlock blockFrom;
-    if (!ReadBlockFromDisk(blockFrom, it->second->GetBlockPos()))
-        return error("CheckStake(): failed to read pointer block");
-
-    int txIdx = -1;
-    for (int i = 0; i < (int)blockFrom.vtx.size(); i++) {
-        if (blockFrom.vtx[i].GetHash() == block.stakePointer.txid) {
-            txIdx = i;
-            break;
-        }
-    }
-    if (txIdx < 0 || block.stakePointer.nPos >= blockFrom.vtx[txIdx].vout.size())
-        return error("CheckStake(): invalid pointer txid/nPos");
-
-    if (blockFrom.vtx[txIdx].vout[block.stakePointer.nPos].nValue <= 0)
-        return error("CheckStake(): pointer output value is zero or negative");
-
-    // 4. Verify block signature using the masternode's proof-of-stake key.
-    if (!block.CheckBlockSignature(pubkeyMasternode))
-        return error("CheckStake(): block signature verification failed");
-
-    // 5. Verify the StakePointer kernel hash meets the difficulty target.
-    // pindexPrev IS the "previous block" for the kernel modifier calculation.
     if (!CheckStakePointerKernelHash(block.nBits, outpointStakePointer,
                                      it->second, pindexPrev,
                                      block.nTime, hashProofOfStake))

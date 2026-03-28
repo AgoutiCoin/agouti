@@ -12,7 +12,10 @@
  * network protocol versioning
  */
 
-static const int PROTOCOL_VERSION = 70051;
+static const int PROTOCOL_VERSION = 70052;
+
+//! minimum protocol version that supports the "mnipupdate" message
+static const int MIN_MNIP_UPDATE_PROTO_VERSION = 70052;
 
 //! initial proto version, to be increased after version/verack negotiation
 static const int INIT_PROTO_VERSION = 210;

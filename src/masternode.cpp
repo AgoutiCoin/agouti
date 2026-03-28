@@ -778,3 +778,81 @@ void CMasternodePing::Relay()
     CInv inv(MSG_MASTERNODE_PING, GetHash());
     RelayInv(inv);
 }
+
+// ---------------------------------------------------------------------------
+// CMasternodeIPUpdate
+// ---------------------------------------------------------------------------
+
+bool CMasternodeIPUpdate::Sign(CKey& keyMasternode, CPubKey& pubKeyMasternode)
+{
+    std::string errorMessage;
+
+    sigTime = GetAdjustedTime();
+
+    std::string strMessage = vin.ToString() + addr.ToString() +
+                             boost::lexical_cast<std::string>(sigTime);
+
+    if (!obfuScationSigner.SignMessage(strMessage, errorMessage, vchSig, keyMasternode)) {
+        LogPrint("masternode", "CMasternodeIPUpdate::Sign() - Error: %s\n", errorMessage);
+        return false;
+    }
+
+    if (!obfuScationSigner.VerifyMessage(pubKeyMasternode, vchSig, strMessage, errorMessage)) {
+        LogPrint("masternode", "CMasternodeIPUpdate::Sign() - Error: %s\n", errorMessage);
+        return false;
+    }
+
+    return true;
+}
+
+bool CMasternodeIPUpdate::CheckAndUpdate(int& nDos)
+{
+    // Reject signatures too far in the future.
+    if (sigTime > GetAdjustedTime() + 60 * 60) {
+        LogPrint("masternode", "mnipupdate - Signature rejected, too far into the future %s\n",
+                 vin.prevout.hash.ToString());
+        nDos = 1;
+        return false;
+    }
+
+    // Find the masternode by VIN.
+    CMasternode* pmn = mnodeman.Find(vin);
+    if (pmn == NULL) {
+        LogPrint("masternode", "mnipupdate - Unknown masternode %s\n", vin.prevout.hash.ToString());
+        return false;
+    }
+
+    // Rate-limit: only accept one update per MASTERNODE_MIN_MNIP_SECONDS.
+    if (sigTime - pmn->sigTime < MASTERNODE_MIN_MNIP_SECONDS) {
+        LogPrint("masternode", "mnipupdate - Too soon after last broadcast for %s\n",
+                 vin.prevout.hash.ToString());
+        nDos = 1;
+        return false;
+    }
+
+    // Verify the signature against the registered masternode key.
+    std::string errorMessage;
+    std::string strMessage = vin.ToString() + addr.ToString() +
+                             boost::lexical_cast<std::string>(sigTime);
+
+    if (!obfuScationSigner.VerifyMessage(pmn->pubKeyMasternode, vchSig, strMessage, errorMessage)) {
+        LogPrint("masternode", "mnipupdate - Signature verification failed for %s: %s\n",
+                 vin.prevout.hash.ToString(), errorMessage);
+        nDos = 100;
+        return false;
+    }
+
+    // Accept the update — change the announced address.
+    LogPrint("masternode", "mnipupdate - Accepted IP update for %s: %s -> %s\n",
+             vin.prevout.hash.ToString(), pmn->addr.ToString(), addr.ToString());
+
+    pmn->addr = addr;
+
+    return true;
+}
+
+void CMasternodeIPUpdate::Relay()
+{
+    CInv inv(MSG_MASTERNODE_IP_UPDATE, GetHash());
+    RelayInv(inv);
+}

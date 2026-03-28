@@ -71,6 +71,8 @@ public:
     map<uint256, CMasternodeBroadcast> mapSeenMasternodeBroadcast;
     // Keep track of all pings I've seen
     map<uint256, CMasternodePing> mapSeenMasternodePing;
+    // Keep track of all IP updates I've seen
+    map<uint256, CMasternodeIPUpdate> mapSeenMasternodeIPUpdate;
 
     // keep track of dsq count to prevent masternodes from gaming obfuscation queue
     int64_t nDsqCount;

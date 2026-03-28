@@ -849,6 +849,27 @@ void CMasternodeMan::ProcessMessage(CNode* pfrom, std::string& strCommand, CData
             LogPrint("masternode", "dseg - Sent %d Masternode entries to peer %i\n", nInvCount, pfrom->GetId());
         }
     }
+
+    else if (strCommand == "mnipupdate") { //Masternode IP Update
+        CMasternodeIPUpdate mnip;
+        vRecv >> mnip;
+
+        if (pfrom->nVersion < MIN_MNIP_UPDATE_PROTO_VERSION) return;
+
+        if (mapSeenMasternodeIPUpdate.count(mnip.GetHash())) return; //seen
+        mapSeenMasternodeIPUpdate.insert(make_pair(mnip.GetHash(), mnip));
+
+        int nDoS = 0;
+        if (mnip.CheckAndUpdate(nDoS)) {
+            // Accepted — update addrman and relay.
+            addrman.Add(CAddress(mnip.addr), pfrom->addr, 2 * 60 * 60);
+            mnip.Relay();
+        } else {
+            if (nDoS > 0)
+                Misbehaving(pfrom->GetId(), nDoS);
+        }
+    }
+
     /*
      * IT'S SAFE TO REMOVE THIS IN FURTHER VERSIONS
      * AFTER MIGRATION TO V12 IS DONE

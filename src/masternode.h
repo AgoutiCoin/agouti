@@ -18,6 +18,7 @@
 #define MASTERNODE_MIN_MNP_SECONDS (10 * 60)
 #define MASTERNODE_MIN_MNB_SECONDS (5 * 60)
 #define MASTERNODE_PING_SECONDS (5 * 60)
+#define MASTERNODE_MIN_MNIP_SECONDS (5 * 60)
 #define MASTERNODE_EXPIRATION_SECONDS (120 * 60)
 #define MASTERNODE_REMOVAL_SECONDS (130 * 60)
 #define MASTERNODE_CHECK_SECONDS 5
@@ -27,6 +28,7 @@ using namespace std;
 class CMasternode;
 class CMasternodeBroadcast;
 class CMasternodePing;
+class CMasternodeIPUpdate;
 extern map<int64_t, uint256> mapCacheBlockHashes;
 
 bool GetBlockHash(uint256& hash, int nBlockHeight);
@@ -328,6 +330,50 @@ public:
     /// Create Masternode broadcast, needs to be relayed manually after that
     static bool Create(CTxIn vin, CService service, CKey keyCollateralAddressNew, CPubKey pubKeyCollateralAddressNew, CKey keyMasternodeNew, CPubKey pubKeyMasternodeNew, std::string& strErrorRet, CMasternodeBroadcast& mnbRet);
     static bool Create(std::string strService, std::string strKey, std::string strTxHash, std::string strOutputIndex, std::string& strErrorRet, CMasternodeBroadcast& mnbRet, bool fOffline = false);
+};
+
+
+//
+// Lightweight IP-update message: allows a masternode to announce a new address
+// without a full re-broadcast.  Signed with the masternode key (hot key), so the
+// collateral key can remain in cold storage.
+// Accepted only from peers running >= MIN_MNIP_UPDATE_PROTO_VERSION.
+//
+class CMasternodeIPUpdate
+{
+public:
+    CTxIn vin;
+    CService addr;          // new address
+    int64_t sigTime;
+    std::vector<unsigned char> vchSig;
+
+    CMasternodeIPUpdate() : sigTime(0) {}
+    CMasternodeIPUpdate(CTxIn vinIn, CService addrIn)
+        : vin(vinIn), addr(addrIn), sigTime(0) {}
+
+    ADD_SERIALIZE_METHODS;
+
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream& s, Operation ser_action, int nType, int nVersion)
+    {
+        READWRITE(vin);
+        READWRITE(addr);
+        READWRITE(sigTime);
+        READWRITE(vchSig);
+    }
+
+    bool Sign(CKey& keyMasternode, CPubKey& pubKeyMasternode);
+    bool CheckAndUpdate(int& nDos);
+    void Relay();
+
+    uint256 GetHash()
+    {
+        CHashWriter ss(SER_GETHASH, PROTOCOL_VERSION);
+        ss << vin;
+        ss << addr;
+        ss << sigTime;
+        return ss.GetHash();
+    }
 };
 
 #endif
