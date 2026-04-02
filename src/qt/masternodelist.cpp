@@ -105,14 +105,11 @@ void MasternodeList::StartAlias(std::string strAlias)
     BOOST_FOREACH (CMasternodeConfig::CMasternodeEntry mne, masternodeConfig.getEntries()) {
         if (mne.getAlias() == strAlias) {
             std::string strError;
-            CMasternodeBroadcast mnb;
 
             bool fSuccess = activeMasternode.Register(mne.getIp(), mne.getPrivKey(), mne.getTxHash(), mne.getOutputIndex(), strError);
 
             if (fSuccess) {
                 strStatusHtml += "<br>Successfully started masternode.";
-                mnodeman.UpdateMasternodeList(mnb);
-                mnb.Relay();
             } else {
                 strStatusHtml += "<br>Failed to start masternode.<br>Error: " + strError;
             }
@@ -136,7 +133,6 @@ void MasternodeList::StartAll(std::string strCommand)
 
     BOOST_FOREACH (CMasternodeConfig::CMasternodeEntry mne, masternodeConfig.getEntries()) {
         std::string strError;
-        CMasternodeBroadcast mnb;
 
         int nIndex;
         if(!mne.castOutputIndex(nIndex))
@@ -151,8 +147,6 @@ void MasternodeList::StartAll(std::string strCommand)
 
         if (fSuccess) {
             nCountSuccessful++;
-            mnodeman.UpdateMasternodeList(mnb);
-            mnb.Relay();
         } else {
             nCountFailed++;
             strFailedHtml += "\nFailed to start " + mne.getAlias() + ". Error: " + strError;
