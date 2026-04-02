@@ -1056,11 +1056,12 @@ void CMasternodeMan::ProcessMessage(CNode* pfrom, std::string& strCommand, CData
             // fake ping
             mn.lastPing = CMasternodePing(vin);
             mn.Check(true);
-            // add v11 masternodes, v12 should be added by mnb only
-            if (protocolVersion < GETHEADERS_VERSION) {
-                LogPrint("masternode", "dsee - Accepted OLD Masternode entry %i %i\n", count, current);
-                Add(mn);
-            }
+            // Accept masternodes via dsee regardless of protocol version: old peers
+            // only speak dsee and never send mnb, so gating on GETHEADERS_VERSION
+            // causes permanent MASTERNODE_SYNC_LIST failure when all peers are v1.2.x.
+            LogPrint("masternode", "dsee - Accepted Masternode entry %i %i\n", count, current);
+            Add(mn);
+            masternodeSync.AddedMasternodeList(vin.prevout.hash);
             if (mn.IsEnabled()) {
                 TRY_LOCK(cs_vNodes, lockNodes);
                 if (!lockNodes) return;

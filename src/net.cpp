@@ -1433,6 +1433,8 @@ void static ThreadStakeMinter()
     try {
         BitcoinMiner(pwallet, true);
         boost::this_thread::interruption_point();
+    } catch (boost::thread_interrupted&) {
+        // Normal shutdown via interrupt — not an error.
     } catch (std::exception& e) {
         LogPrintf("ThreadStakeMinter() exception \n");
     } catch (...) {
