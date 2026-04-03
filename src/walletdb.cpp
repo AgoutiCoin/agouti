@@ -949,6 +949,9 @@ bool CWalletDB::Recover(CDBEnv& dbenv, std::string filename, bool fOnlyKeys)
     int64_t now = GetTime();
     std::string newFilename = strprintf("wallet.%d.bak", now);
 
+    dbenv.CloseDb(filename);
+    dbenv.CheckpointLSN(filename);
+
     int result = dbenv.dbenv.dbrename(NULL, filename.c_str(), NULL,
         newFilename.c_str(), DB_AUTO_COMMIT);
     if (result == 0)
