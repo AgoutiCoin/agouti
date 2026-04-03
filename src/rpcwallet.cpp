@@ -2305,58 +2305,82 @@ Value multisend(const Array& params, bool fHelp)
 }
 Value getzerocoinbalance(const Array& params, bool fHelp)
 {
+    if (fHelp)
+        throw runtime_error("getzerocoinbalance\n\nZerocoin is disabled.\n");
     throw JSONRPCError(RPC_WALLET_ERROR, "Zerocoin is disabled.");
 }
 Value listmintedzerocoins(const Array& params, bool fHelp)
 {
+    if (fHelp)
+        throw runtime_error("listmintedzerocoins\n\nZerocoin is disabled.\n");
     throw JSONRPCError(RPC_WALLET_ERROR, "Zerocoin is disabled.");
 }
 
 Value listzerocoinamounts(const Array& params, bool fHelp)
 {
+    if (fHelp)
+        throw runtime_error("listzerocoinamounts\n\nZerocoin is disabled.\n");
     throw JSONRPCError(RPC_WALLET_ERROR, "Zerocoin is disabled.");
 }
 Value listspentzerocoins(const Array& params, bool fHelp)
 {
+    if (fHelp)
+        throw runtime_error("listspentzerocoins\n\nZerocoin is disabled.\n");
     throw JSONRPCError(RPC_WALLET_ERROR, "Zerocoin is disabled.");
 }
 
 Value mintzerocoin(const Array& params, bool fHelp)
 {
+    if (fHelp)
+        throw runtime_error("mintzerocoin\n\nZerocoin is disabled.\n");
     throw JSONRPCError(RPC_WALLET_ERROR, "Zerocoin is disabled.");
 }
 
 Value spendzerocoin(const Array& params, bool fHelp)
 {
+    if (fHelp)
+        throw runtime_error("spendzerocoin\n\nZerocoin is disabled.\n");
     throw JSONRPCError(RPC_WALLET_ERROR, "Zerocoin is disabled.");
 }
 
 Value resetmintzerocoin(const Array& params, bool fHelp)
 {
+    if (fHelp)
+        throw runtime_error("resetmintzerocoin\n\nZerocoin is disabled.\n");
     throw JSONRPCError(RPC_WALLET_ERROR, "Zerocoin is disabled.");
 }
 
 Value resetspentzerocoin(const Array& params, bool fHelp)
 {
+    if (fHelp)
+        throw runtime_error("resetspentzerocoin\n\nZerocoin is disabled.\n");
     throw JSONRPCError(RPC_WALLET_ERROR, "Zerocoin is disabled.");
 }
 
 Value getarchivedzerocoin(const Array& params, bool fHelp)
 {
+    if (fHelp)
+        throw runtime_error("getarchivedzerocoin\n\nZerocoin is disabled.\n");
     throw JSONRPCError(RPC_WALLET_ERROR, "Zerocoin is disabled.");
 }
 
 Value exportzerocoins(const Array& params, bool fHelp)
 {
+    if (fHelp)
+        throw runtime_error("exportzerocoins\n\nZerocoin is disabled.\n");
     throw JSONRPCError(RPC_WALLET_ERROR, "Zerocoin is disabled.");
 }
 
 Value importzerocoins(const Array& params, bool fHelp)
 {
+    if (fHelp)
+        throw runtime_error("importzerocoins\n\nZerocoin is disabled.\n");
     throw JSONRPCError(RPC_WALLET_ERROR, "Zerocoin is disabled.");
 }
 
 Value reconsiderzerocoins(const Array& params, bool fHelp)
 {
+    if (fHelp)
+        throw runtime_error("reconsiderzerocoins\n\nZerocoin is disabled.\n");
     throw JSONRPCError(RPC_WALLET_ERROR, "Zerocoin is disabled.");
 }

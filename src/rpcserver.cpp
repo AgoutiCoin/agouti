@@ -398,18 +398,18 @@ static const CRPCCommand vRPCCommands[] =
         {"wallet", "walletpassphrasechange", &walletpassphrasechange, true, false, true},
         {"wallet", "walletpassphrase", &walletpassphrase, true, false, true},
 
-        {"zerocoin", "getzerocoinbalance", &getzerocoinbalance, false, false, true},
-        {"zerocoin", "listmintedzerocoins", &listmintedzerocoins, false, false, true},
-        {"zerocoin", "listspentzerocoins", &listspentzerocoins, false, false, true},
-        {"zerocoin", "listzerocoinamounts", &listzerocoinamounts, false, false, true},
-        {"zerocoin", "mintzerocoin", &mintzerocoin, false, false, true},
-        {"zerocoin", "spendzerocoin", &spendzerocoin, false, false, true},
-        {"zerocoin", "resetmintzerocoin", &resetmintzerocoin, false, false, true},
-        {"zerocoin", "resetspentzerocoin", &resetspentzerocoin, false, false, true},
-        {"zerocoin", "getarchivedzerocoin", &getarchivedzerocoin, false, false, true},
-        {"zerocoin", "importzerocoins", &importzerocoins, false, false, true},
-        {"zerocoin", "exportzerocoins", &exportzerocoins, false, false, true},
-        {"zerocoin", "reconsiderzerocoins", &reconsiderzerocoins, false, false, true}
+        {"hidden", "getzerocoinbalance", &getzerocoinbalance, false, false, true},
+        {"hidden", "listmintedzerocoins", &listmintedzerocoins, false, false, true},
+        {"hidden", "listspentzerocoins", &listspentzerocoins, false, false, true},
+        {"hidden", "listzerocoinamounts", &listzerocoinamounts, false, false, true},
+        {"hidden", "mintzerocoin", &mintzerocoin, false, false, true},
+        {"hidden", "spendzerocoin", &spendzerocoin, false, false, true},
+        {"hidden", "resetmintzerocoin", &resetmintzerocoin, false, false, true},
+        {"hidden", "resetspentzerocoin", &resetspentzerocoin, false, false, true},
+        {"hidden", "getarchivedzerocoin", &getarchivedzerocoin, false, false, true},
+        {"hidden", "importzerocoins", &importzerocoins, false, false, true},
+        {"hidden", "exportzerocoins", &exportzerocoins, false, false, true},
+        {"hidden", "reconsiderzerocoins", &reconsiderzerocoins, false, false, true}
 
 #endif // ENABLE_WALLET
 };
