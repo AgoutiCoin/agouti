@@ -3527,6 +3527,14 @@ bool ContextualCheckBlock(const CBlock& block, CValidationState& state, CBlockIn
             return state.DoS(10, error("%s : contains a non-final transaction", __func__), REJECT_INVALID, "bad-txns-nonfinal");
         }
 
+    // Enforce version-5 (StakePointer) for PoS blocks at and above the fork height.
+    // Reject old-version PoS blocks so the pre-fork chain cannot outpace the
+    // new stakepointer chain by accumulated work alone.
+    if (block.IsProofOfStake() && nHeight >= Params().StakePointerForkHeight() && block.nVersion < 5)
+        return state.DoS(100, error("%s : PoS block version %d below required version 5 at height %d",
+                                    __func__, block.nVersion, nHeight),
+            REJECT_INVALID, "bad-version-pos");
+
     // Height-gated PoS future drift tightening (180s -> 60s)
     if (block.IsProofOfStake() && nHeight >= POS_FUTURE_DRIFT_V2_HEIGHT) {
         if (block.GetBlockTime() > GetAdjustedTime() + 60)
@@ -3964,6 +3972,7 @@ bool static LoadBlockIndexDB()
         //try reading the block from the last index we have
         bool isFixed = true;
         string strError = "";
+        CValidationState state;
         LogPrintf("%s: Attempting to re-add last block that was recorded to disk\n", __func__);
 
         //get the last block that was properly recorded to the block info file
@@ -3971,33 +3980,52 @@ bool static LoadBlockIndexDB()
 
         //fix Assertion `hashPrevBlock == view.GetBestBlock()' failed. By adjusting height to the last recorded by coinsview
         CBlockIndex* pindexCoinsView = mapBlockIndex[pcoinsTip->GetBestBlock()];
-        for(unsigned int i = vinfoBlockFile[nLastBlockFile].nHeightLast + 1; i < vSortedByHeight.size(); i++)
+
+        // Find the child of the coins view best block to reprocess.
+        // We must rewind chainActive to exactly pindexCoinsView (not pindexLastMeta->pprev)
+        // so that the coins view and chain tip are in sync when ConnectBlock runs.
+        // In a fork scenario multiple blocks may exist at the same height;
+        // prefer the one whose pprev matches pindexCoinsView (same branch).
+        pindexLastMeta = NULL;
+        for(unsigned int i = 0; i < vSortedByHeight.size(); i++)
         {
-            pindexLastMeta = vSortedByHeight[i].second;
-            if(pindexLastMeta->nHeight > pindexCoinsView->nHeight)
-                break;
+            if(vSortedByHeight[i].second->nHeight == pindexCoinsView->nHeight + 1) {
+                pindexLastMeta = vSortedByHeight[i].second;
+                // Exact parent match — this is the right branch
+                if(pindexLastMeta->pprev == pindexCoinsView)
+                    break;
+            }
         }
 
-        LogPrintf("%s: Last block properly recorded: #%d %s\n", __func__, pindexLastMeta->nHeight, pindexLastMeta->GetBlockHash().ToString().c_str());
+        // If there is no block after the coins view tip, there is nothing to reprocess
+        if (pindexLastMeta == NULL) {
+            LogPrintf("%s: No block found after coinsview tip at height %d, setting chain to coinsview tip\n",
+                      __func__, pindexCoinsView->nHeight);
+            chainActive.SetTip(pindexCoinsView);
+        } else {
+            LogPrintf("%s: Last block properly recorded: #%d %s\n", __func__, pindexLastMeta->nHeight, pindexLastMeta->GetBlockHash().ToString().c_str());
+            LogPrintf("%s: Coinsview best block at height: #%d %s\n", __func__, pindexCoinsView->nHeight, pindexCoinsView->GetBlockHash().ToString().c_str());
 
-        CBlock lastMetaBlock;
-        if (!ReadBlockFromDisk(lastMetaBlock, pindexLastMeta)) {
-            isFixed = false;
-            strError = strprintf("failed to read block %d from disk", pindexLastMeta->nHeight);
+            CBlock lastMetaBlock;
+            if (!ReadBlockFromDisk(lastMetaBlock, pindexLastMeta)) {
+                isFixed = false;
+                strError = strprintf("failed to read block %d from disk", pindexLastMeta->nHeight);
+            }
+
+            //set the chain to the coinsview tip so that coins DB and chain are in sync
+            chainActive.SetTip(pindexCoinsView);
+
+            //Process the lastMetaBlock again, using the known location on disk
+            CDiskBlockPos blockPos = pindexLastMeta->GetBlockPos();
+            ProcessNewBlock(state, NULL, &lastMetaBlock, &blockPos);
         }
 
-        //set the chain to the block before lastMeta so that the meta block will be seen as new
-        chainActive.SetTip(pindexLastMeta->pprev);
-
-        //Process the lastMetaBlock again, using the known location on disk
-        CDiskBlockPos blockPos = pindexLastMeta->GetBlockPos();
-        CValidationState state;
-        ProcessNewBlock(state, NULL, &lastMetaBlock, &blockPos);
-
-        //ensure that everything is as it should be
-        if (pcoinsTip->GetBestBlock() != vSortedByHeight[vSortedByHeight.size() - 1].second->GetBlockHash()) {
+        //ensure that everything is as it should be — coins DB must match the active chain tip.
+        //Do not compare against the highest block in the index; during a fork the most-work
+        //chain may not include the tallest block (orphaned branch).
+        if (chainActive.Tip() == NULL || pcoinsTip->GetBestBlock() != chainActive.Tip()->GetBlockHash()) {
             isFixed = false;
-            strError = "pcoinsTip best block is not correct";
+            strError = "pcoinsTip best block does not match chainActive tip";
         }
 
         //properly account for all of the blocks that were not in the meta data. If this is not done the file
