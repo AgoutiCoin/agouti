@@ -247,10 +247,10 @@ bool CCryptoKeyStore::Unlock(const CKeyingMaterial& vMasterKeyIn)
                 break;
         }
         if (keyPass && keyFail) {
-            LogPrintf("The wallet is probably corrupted: Some keys decrypt but not all.");
-            assert(false);
+            LogPrintf("WARNING: The wallet is probably corrupted: Some keys decrypt but not all.\n");
+            LogPrintf("WARNING: Unlocking with the keys that could be decrypted. Some funds may be inaccessible.\n");
         }
-        if (keyFail || !keyPass)
+        if (!keyPass)
             return false;
         vMasterKey = vMasterKeyIn;
         fDecryptionThoroughlyChecked = true;

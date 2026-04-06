@@ -147,9 +147,11 @@ void CMasternodeSync::GetNextAsset()
         break;
     case (MASTERNODE_SYNC_LIST):
         RequestedMasternodeAssets = MASTERNODE_SYNC_MNW;
+        lastMasternodeWinner = 0;
         break;
     case (MASTERNODE_SYNC_MNW):
         RequestedMasternodeAssets = MASTERNODE_SYNC_BUDGET;
+        lastBudgetItem = 0;
         break;
     case (MASTERNODE_SYNC_BUDGET):
         LogPrintf("CMasternodeSync::GetNextAsset - Sync has finished\n");
@@ -333,6 +335,13 @@ void CMasternodeSync::Process()
                     return;
                 }
 
+                // Absolute time limit: if this phase has run long enough, advance regardless
+                // of whether winner broadcasts are still arriving from the network.
+                if (GetTime() - nAssetSyncStarted > MASTERNODE_SYNC_TIMEOUT * 8) {
+                    GetNextAsset();
+                    return;
+                }
+
                 if (pnode->HasFulfilledRequest("mnwsync")) continue;
                 pnode->FulfilledRequest("mnwsync");
 
@@ -358,16 +367,23 @@ void CMasternodeSync::Process()
 
         if (pnode->nVersion >= ActiveProtocol()) {
             if (RequestedMasternodeAssets == MASTERNODE_SYNC_BUDGET) {
-                
+
                 // We'll start rejecting votes if we accidentally get set as synced too soon
-                if (lastBudgetItem > 0 && lastBudgetItem < GetTime() - MASTERNODE_SYNC_TIMEOUT * 2 && RequestedMasternodeAttempt >= MASTERNODE_SYNC_THRESHOLD) { 
-                    
+                if (lastBudgetItem > 0 && lastBudgetItem < GetTime() - MASTERNODE_SYNC_TIMEOUT * 2 && RequestedMasternodeAttempt >= MASTERNODE_SYNC_THRESHOLD) {
+
                     // Hasn't received a new item in the last five seconds, so we'll move to the
                     GetNextAsset();
 
                     // Try to activate our masternode if possible
                     activeMasternode.ManageStatus();
 
+                    return;
+                }
+
+                // Absolute time limit: advance regardless of incoming budget broadcasts
+                if (GetTime() - nAssetSyncStarted > MASTERNODE_SYNC_TIMEOUT * 8) {
+                    GetNextAsset();
+                    activeMasternode.ManageStatus();
                     return;
                 }
 

@@ -30,7 +30,7 @@ Agouti is a fork of [PIVX](https://github.com/PIVX-Project/PIVX) that forked
 | Parameter                  | Mainnet               | Testnet     | Regtest |
 |----------------------------|-----------------------|-------------|---------|
 | Ticker                     | AGU                   | AGU         | AGU     |
-| Block target time          | 60 seconds            | 60 seconds  | 60 s    |
+| Block target time          | 10 minutes            | 10 seconds  | 10 s    |
 | Base unit (1 AGU)          | 100,000,000 satoshis  | —           | —       |
 | Maximum supply             | 3,000,000 AGU         | 43,199,500  | —       |
 | PoW period                 | Blocks 1–500          | 1–200       | 1–200   |
@@ -38,9 +38,9 @@ Agouti is a fork of [PIVX](https://github.com/PIVX-Project/PIVX) that forked
 | Coin maturity              | 15 confirmations      | 15          | 15      |
 | Stake minimum age          | 1 hour                | 1 hour      | —       |
 | Max block size             | 2 MB                  | 2 MB        | 2 MB    |
-| Genesis time               | 2018-09-13 (Unix 1536892874) | —  | —       |
-| P2P port                   | 5151                  | 7777        | 51436   |
-| RPC port                   | 6161                  | 38843       | —       |
+| Genesis time               | 2018-09-14 (Unix 1536892874) | —  | —       |
+| P2P port                   | 5151                  | 5252        | 5353    |
+| RPC port                   | 6161                  | 6262        | 6363    |
 
 **Address prefixes (mainnet)**
 
@@ -113,14 +113,14 @@ it removes the node from the network immediately.
 
 | Item                          | Amount   | Notes                                   |
 |-------------------------------|----------|-----------------------------------------|
-| Proposal submission fee       | 50 AGU   | Burnt; paid to a provably unspendable address |
-| Finalisation fee              | 50 AGU   | Burnt; paid when submitting finalised budget |
+| Proposal submission fee       | 2 AGU    | Burnt; paid to a provably unspendable address |
+| Finalisation fee              | 2 AGU    | Burnt; paid when submitting finalised budget |
 | Collateral confirmations      | 6        | Required before proposal is considered valid |
-| Budget cycle length           | 43,200 blocks (~30 days, mainnet) | 720 blocks on testnet |
-| Monthly budget pool           | 2% of block subsidy × 43,200 blocks |                    |
+| Budget cycle length           | 4,383 blocks (~30.4 days, mainnet) | 720 blocks on testnet |
+| Monthly budget pool           | 2% of block subsidy × 4,383 blocks |                    |
 
 At 0.125 AGU/block the monthly budget is approximately:
-  `0.125 × 0.02 × 43,200 = 108 AGU/month`
+  `0.125 × 0.02 × 4,383 ≈ 10.96 AGU/month`
 
 ### Obfuscation (mixing) collateral
 
@@ -284,7 +284,7 @@ agouti-cli masternodelist | grep <server-IP>
 ### Masternode rewards
 
 The masternode receives its share of the block reward approximately every
-`(total_masternodes × 60 seconds)` on average. Payments are deterministic and rotate
+`(total_masternodes × 10 minutes)` on average. Payments are deterministic and rotate
 through the masternode list.
 
 ### Running a masternode on a dynamic IP
@@ -350,7 +350,7 @@ Approved proposals are paid from the monthly budget pool at the superblock.
 
 ### Budget cycle
 
-- **Cycle length:** 43,200 blocks (~30 days) on mainnet
+- **Cycle length:** 4,383 blocks (~30.4 days) on mainnet
 - **Superblock:** the last block of each cycle; approved proposals are paid here
 - **Budget pool:** 2% of each block's subsidy accumulates over the cycle
 
@@ -369,7 +369,7 @@ agouti-cli mnbudget prepare \
 ```
 
 This returns a `preparationTxHash`. The command creates a collateral transaction
-burning **50 AGU**. Wait for **6 confirmations** before proceeding.
+burning **2 AGU**. Wait for **6 confirmations** before proceeding.
 
 #### Step 2 — Submit the proposal
 
@@ -394,7 +394,7 @@ Once sufficient votes are gathered, finalise the budget:
 agouti-cli mnfinalbudget suggest
 ```
 
-A **50 AGU finalisation fee** is paid at this step. Wait for 6 confirmations.
+A **2 AGU finalisation fee** is paid at this step. Wait for 6 confirmations.
 
 ### Voting on proposals
 
@@ -450,7 +450,7 @@ stake on your behalf.
 You do **not** need to send coins to the server. You do **not** need to keep
 your home wallet running. The masternode stakes automatically as long as it is
 online, registered, and has received at least one block reward in the last
-~3 days.
+~30 days.
 
 Any other AGU in your wallet is irrelevant to staking. You cannot stake with
 loose coins — only masternodes stake. One masternode = one staking slot.
@@ -483,7 +483,7 @@ by an ordinary staking UTXO. Coin-age grinding is eliminated.
 
 - The node must be a **registered, active masternode**.
 - The masternode must have received at least one block reward within the last
-  4,320 blocks (~3 days).
+  4,320 blocks (~30 days).
 - The controlling wallet must hold the collateral key (or a delegated signing key).
 
 ### Configuration
@@ -512,7 +512,7 @@ The miner loop:
 ### If you missed the validity window
 
 If the node was offline and the most recent masternode payment fell outside the
-4,320-block window, wait for the next payment cycle. To rescan for payments after
+4,320-block (~30-day) window, wait for the next payment cycle. To rescan for payments after
 returning online:
 
 ```bash
@@ -582,11 +582,10 @@ This ensures `GetStakePointer()` can locate eligible payment outputs.
 | Masternode collateral         | 3,000 AGU      |
 | Stake minimum age             | 1 hour         |
 | Coin maturity                 | 15 blocks      |
-| Budget cycle                  | 43,200 blocks  |
-| Budget proposal fee           | 50 AGU         |
-| Budget finalisation fee       | 50 AGU         |
-| MN/staker split (pre-2565000) | 90 / 10        |
-| MN/staker split (post-2565000)| 50 / 50        |
+| Budget cycle                  | 4,383 blocks   |
+| Budget proposal fee           | 2 AGU          |
+| Budget finalisation fee       | 2 AGU          |
+| MN/staker split               | 50 / 50        |
 | StakePointer fork height      | 2,690,000      |
 | StakePointer validity window  | 4,320 blocks   |
 | Kernel modifier lookback      | 100 blocks     |
@@ -595,11 +594,11 @@ This ensures `GetStakePointer()` can locate eligible payment outputs.
 
 | Parameter                     | Value         |
 |-------------------------------|---------------|
-| P2P port                      | 7777          |
-| RPC port                      | 38843         |
+| P2P port                      | 5252          |
+| RPC port                      | 6262          |
 | Last PoW block                | 200           |
 | Budget cycle                  | 720 blocks    |
-| Budget proposal fee           | 50 AGU        |
+| Budget proposal fee           | 2 AGU         |
 | StakePointer fork height      | 300           |
 | StakePointer validity window  | 200 blocks    |
 | Kernel modifier lookback      | 10 blocks     |
@@ -608,7 +607,8 @@ This ensures `GetStakePointer()` can locate eligible payment outputs.
 
 | Parameter                     | Value    |
 |-------------------------------|----------|
-| P2P port                      | 51436    |
+| P2P port                      | 5353     |
+| RPC port                      | 6363     |
 | Last PoW block                | 200      |
 | StakePointer fork height      | 201      |
 | StakePointer validity window  | 50 blocks|

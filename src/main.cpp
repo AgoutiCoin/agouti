@@ -1653,10 +1653,8 @@ int64_t GetMasternodePayment(int nHeight, int64_t blockValue, int nMasternodeCou
 
     if (nHeight < 101) {
 	ret = 0;
-    } else if (nHeight >= 2565000) {
-	ret = blockValue / 2;
     } else {
-	ret = blockValue * 9 / 10;
+	ret = blockValue / 2;
     }
 
     return ret;
@@ -4879,10 +4877,6 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
             pfrom->fRelayTxes = true;
 
         if (chainActive.Height() >= 2675000 && pfrom->nVersion < MIN_MNIP_UPDATE_PROTO_VERSION) {
-            LogPrintf("disconnecting from legacy version after fork (peer %d)\n", pfrom->id);
-            pfrom->fDisconnect = true;
-            return true;
-        } else if (chainActive.Height() >= 2565000 && pfrom->nVersion < 70051) {
             LogPrintf("disconnecting from legacy version after fork (peer %d)\n", pfrom->id);
             pfrom->fDisconnect = true;
             return true;

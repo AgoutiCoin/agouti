@@ -104,8 +104,8 @@ public:
         nSubsidyHalvingInterval = 99999999;
         nMaxReorganizationDepth = 100;
         nMinerThreads = 0;
-        nTargetTimespan = 1 * 60;
-        nTargetSpacing = 1 * 60;
+        nTargetTimespan = 10 * 60;
+        nTargetSpacing = 10 * 60;
         nMaturity = 15;
         nMasternodeCountDrift = 20;
         nMaxMoneyOut = 3000000 * COIN;
@@ -169,8 +169,8 @@ public:
 
         /** StakePointer PoS kernel — set nStakePointerForkHeight before mainnet activation */
         nKernelModifierOffset       = 100;    // must equal nMaxReorganizationDepth
-        nStakePointerValidityPeriod = 4320;   // ~3 days at 60 s/block
-        nStakePointerForkHeight     = 2690000; // TODO: set final value before activating
+        nStakePointerValidityPeriod = 4320;   // ~30 days at 600 s/block (post-2565000)
+        nStakePointerForkHeight     = 2675000;
     }
 
     const Checkpoints::CCheckpointData& Checkpoints() const
@@ -195,11 +195,11 @@ public:
         pchMessageStart[2] = 0x2e;
         pchMessageStart[3] = 0xc5;
         vAlertPubKey = ParseHex("042292b1f401860eea99e1a8a103effbd7e1c013a59a1a3a0c91c9d1997a0bc6f338567278c11344802838c107055bf7c1641eaed61e879245c255a4f5be5746fc");
-        nDefaultPort = 7777;
+        nDefaultPort = 5252;
         nMinerThreads = 0;
-        nTargetTimespan = 1 * 60; // Agouti: 1 day
-        nTargetSpacing = 1 * 60;  // Agouti: 1 minute
-        nLastPOWBlock = 200;
+        nTargetTimespan = 10;  // Agouti: 10 seconds
+        nTargetSpacing = 10;   // Agouti: 10 seconds
+        nLastPOWBlock = 1000;
         nMaturity = 15;
         nMasternodeCountDrift = 4;
         nModifierUpdateBlock = 51197; //approx Mon, 17 Apr 2017 04:00:00 GMT
@@ -247,7 +247,7 @@ public:
         /** StakePointer PoS kernel — shorter periods for testnet */
         nKernelModifierOffset       = 10;
         nStakePointerValidityPeriod = 200;
-        nStakePointerForkHeight     = 300;
+        nStakePointerForkHeight     = 2000;
     }
     const Checkpoints::CCheckpointData& Checkpoints() const
     {
@@ -273,15 +273,15 @@ public:
         pchMessageStart[3] = 0xac;
         nSubsidyHalvingInterval = 150;
         nMinerThreads = 1;
-        nTargetTimespan = 24 * 60 * 60; // Agouti: 1 day
-        nTargetSpacing = 1 * 60;        // Agouti: 1 minutes
+        nTargetTimespan = 10;            // Agouti: 10 seconds
+        nTargetSpacing = 10;             // Agouti: 10 seconds
         bnProofOfWorkLimit = ~uint256(0) >> 1;
         genesis.nTime = 1515524400;
         genesis.nBits = 0x1e0ffff0;
         genesis.nNonce = 732084;
 
         hashGenesisBlock = genesis.GetHash();
-        nDefaultPort = 51436;
+        nDefaultPort = 5353;
         //assert(hashGenesisBlock == uint256("0x000008415bdca132b70cf161ecc548e5d0150fd6634a381ee2e99bb8bb77dbb3"));
 
         vFixedSeeds.clear(); //! Testnet mode doesn't have any fixed seeds.
