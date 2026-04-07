@@ -199,7 +199,7 @@ public:
         nMinerThreads = 0;
         nTargetTimespan = 10;  // Agouti: 10 seconds
         nTargetSpacing = 10;   // Agouti: 10 seconds
-        nLastPOWBlock = 1000;
+        nLastPOWBlock = 300;
         nMaturity = 15;
         nMasternodeCountDrift = 4;
         nModifierUpdateBlock = 51197; //approx Mon, 17 Apr 2017 04:00:00 GMT
@@ -247,7 +247,7 @@ public:
         /** StakePointer PoS kernel — shorter periods for testnet */
         nKernelModifierOffset       = 10;
         nStakePointerValidityPeriod = 200;
-        nStakePointerForkHeight     = 2000;
+        nStakePointerForkHeight     = 600;
     }
     const Checkpoints::CCheckpointData& Checkpoints() const
     {
