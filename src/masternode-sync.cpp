@@ -239,18 +239,7 @@ void CMasternodeSync::Process()
     if (tick++ % MASTERNODE_SYNC_TIMEOUT != 0) return;
 
     if (IsSynced()) {
-        /*
-            Resync if we lose all masternodes from sleep/wake or failure to sync originally.
-            Cap at 3 resets to prevent infinite loop when no masternodes exist on the network.
-        */
-        if (mnodeman.CountEnabled() == 0) {
-            if (nCountFailures < 3) {
-                nCountFailures++;
-                Reset();
-            }
-        } else {
-            return;
-        }
+        return;
     }
 
     //try syncing again
