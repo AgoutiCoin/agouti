@@ -70,7 +70,6 @@ void CMasternodeSync::Reset()
     mapSeenSyncMNW.clear();
     mapSeenSyncBudget.clear();
     lastFailure = 0;
-    nCountFailures = 0;
     sumMasternodeList = 0;
     sumMasternodeWinner = 0;
     sumBudgetItemProp = 0;
@@ -307,6 +306,13 @@ void CMasternodeSync::Process()
                 LogPrint("masternode", "CMasternodeSync::Process() - lastMasternodeList %lld (GetTime() - MASTERNODE_SYNC_TIMEOUT) %lld\n", lastMasternodeList, GetTime() - MASTERNODE_SYNC_TIMEOUT);
                 if (lastMasternodeList > 0 && lastMasternodeList < GetTime() - MASTERNODE_SYNC_TIMEOUT * 2 &&
                     (RequestedMasternodeAttempt >= MASTERNODE_SYNC_THRESHOLD || GetTime() - nAssetSyncStarted > MASTERNODE_SYNC_TIMEOUT * 5)) {
+                    GetNextAsset();
+                    return;
+                }
+
+                // Absolute time limit: if this phase has run long enough, advance regardless
+                // of whether masternode broadcasts are still arriving from the network.
+                if (GetTime() - nAssetSyncStarted > MASTERNODE_SYNC_TIMEOUT * 8) {
                     GetNextAsset();
                     return;
                 }
