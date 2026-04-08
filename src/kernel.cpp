@@ -38,7 +38,7 @@ static std::map<int, unsigned int> mapStakeModifierCheckpoints =
 // Get time weight
 int64_t GetWeight(int64_t nIntervalBeginning, int64_t nIntervalEnd)
 {
-    return nIntervalEnd - nIntervalBeginning - nStakeMinAge;
+    return nIntervalEnd - nIntervalBeginning - Params().StakeMinAge();
 }
 
 // Get the last stake modifier and its generation time from a given block
@@ -259,8 +259,9 @@ bool GetKernelStakeModifier(uint256 hashBlockFrom, uint64_t& nStakeModifier, int
     // loop to find the stake modifier later by a selection interval
     while (nStakeModifierTime < pindexFrom->GetBlockTime() + nStakeModifierSelectionInterval) {
         if (!pindexNext) {
-            // Should never happen
-            return error("Null pindexNext\n");
+            // Reached chain tip before spanning the full selection interval;
+            // use the best modifier found so far.
+            break;
         }
 
         pindex = pindexNext;
@@ -307,8 +308,8 @@ bool CheckStakeKernelHash(unsigned int nBits, const CBlock& blockFrom, const CTr
     if (nTimeTx < nTimeBlockFrom) // Transaction timestamp violation
         return error("CheckStakeKernelHash() : nTime violation");
 
-    if (nTimeBlockFrom + nStakeMinAge > nTimeTx) // Min age requirement
-        return error("CheckStakeKernelHash() : min age violation - nTimeBlockFrom=%d nStakeMinAge=%d nTimeTx=%d", nTimeBlockFrom, nStakeMinAge, nTimeTx);
+    if (nTimeBlockFrom + Params().StakeMinAge() > nTimeTx) // Min age requirement
+        return error("CheckStakeKernelHash() : min age violation - nTimeBlockFrom=%d nStakeMinAge=%u nTimeTx=%d", nTimeBlockFrom, Params().StakeMinAge(), nTimeTx);
 
     //grab difficulty
     uint256 bnTargetPerCoinDay;
@@ -443,11 +444,13 @@ bool CheckStakePointerKernelHash(
        << pindexFrom->GetBlockTime() << nTimeStake;
     hashProofOfStake = Hash(ss.begin(), ss.end());
 
-    // Target: hashProofOfStake < MASTERNODE_COLLATERAL * bnTarget
+    // Target: hashProofOfStake < (MASTERNODE_COLLATERAL / 100) * bnTarget
+    // Divide by 100 to match the old kernel's bnCoinDayWeight scaling and
+    // prevent uint256 overflow that would make the check trivially easy.
     uint256 bnTarget;
     bnTarget.SetCompact(nBits);
 
-    if (hashProofOfStake >= uint256((uint64_t)MASTERNODE_COLLATERAL) * bnTarget)
+    if (hashProofOfStake >= uint256((uint64_t)(MASTERNODE_COLLATERAL / 100)) * bnTarget)
         return false;
 
     if (GetBoolArg("-printcoinstake", false))

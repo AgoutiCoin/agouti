@@ -161,6 +161,9 @@ enum opcodetype
     OP_NOP9 = 0xb8,
     OP_NOP10 = 0xb9,
 
+    // proof-of-stake (version-5 coinstake marker)
+    OP_PROOFOFSTAKE = 0xc0,
+
     // zerocoin
     OP_ZEROCOINMINT = 0xc1,
     OP_ZEROCOINSPEND = 0xc2,
@@ -592,6 +595,7 @@ public:
     bool IsPayToScriptHash() const;
     bool IsZerocoinMint() const;
     bool IsZerocoinSpend() const;
+    bool IsProofOfStakeMarker() const;
 
     /** Called by IsStandardTx and P2SH/BIP62 VerifyScript (which makes it consensus-critical). */
     bool IsPushOnly(const_iterator pc) const;

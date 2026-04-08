@@ -9,16 +9,27 @@
 // Must match the message magic used in SignMessage / VerifyMessage throughout this codebase.
 static const std::string strStakePointerMsgMagic = "DarkNet Signed Message:\n";
 
-bool StakePointer::VerifyCollateralSignOver() const
+uint256 StakePointer::CollateralSignOverHash(const CPubKey& pubKeyPoS)
 {
-    // Canonical message: "StakePointer sign-over:" + hex key-ID of the proof-of-stake key.
     std::string strMessage = std::string("StakePointer sign-over:") +
-                             pubKeyProofOfStake.GetID().ToString();
+                             pubKeyPoS.GetID().ToString();
 
     CHashWriter ss(SER_GETHASH, 0);
     ss << strStakePointerMsgMagic;
     ss << strMessage;
-    uint256 hash = ss.GetHash();
+    return ss.GetHash();
+}
 
+bool StakePointer::VerifyCollateralSignOver() const
+{
+    uint256 hash = CollateralSignOverHash(pubKeyProofOfStake);
     return pubKeyCollateral.Verify(hash, vchSigCollateralSignOver);
+}
+
+bool StakePointer::CreateCollateralSignOver(const CKey& keyCollateral,
+                                            const CPubKey& pubKeyPoS,
+                                            std::vector<unsigned char>& vchSigOut)
+{
+    uint256 hash = CollateralSignOverHash(pubKeyPoS);
+    return keyCollateral.Sign(hash, vchSigOut);
 }

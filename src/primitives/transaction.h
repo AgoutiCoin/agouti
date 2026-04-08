@@ -285,13 +285,28 @@ public:
 
     bool IsCoinBase() const
     {
-        return (vin.size() == 1 && vin[0].prevout.IsNull() && !ContainsZerocoins());
+        return (vin.size() == 1 && vin[0].prevout.IsNull() &&
+                !vin[0].scriptSig.IsProofOfStakeMarker() && !ContainsZerocoins());
     }
 
     bool IsCoinStake() const
     {
-        // ppcoin: the coin stake transaction is marked with the first output empty
-        return (vin.size() > 0 && (!vin[0].prevout.IsNull()) && vout.size() >= 2 && vout[0].IsEmpty());
+        // Legacy coin-stake (v4): non-null prevout, first output empty.
+        if (vin.size() > 0 && !vin[0].prevout.IsNull() && vout.size() >= 2 && vout[0].IsEmpty())
+            return true;
+        // StakePointer coin-stake (v5): null prevout with OP_PROOFOFSTAKE marker, first output empty.
+        if (vin.size() == 1 && vin[0].prevout.IsNull() && vin[0].scriptSig.IsProofOfStakeMarker()
+            && vout.size() >= 2 && vout[0].IsEmpty())
+            return true;
+        return false;
+    }
+
+    /** True only for the version-5 coinstake format (null prevout + OP_PROOFOFSTAKE).
+     *  Used to skip input validation in consensus code — v5 coinstakes have no real inputs. */
+    bool IsV5CoinStake() const
+    {
+        return (vin.size() == 1 && vin[0].prevout.IsNull() && vin[0].scriptSig.IsProofOfStakeMarker()
+                && vout.size() >= 2 && vout[0].IsEmpty());
     }
 
     friend bool operator==(const CTransaction& a, const CTransaction& b)

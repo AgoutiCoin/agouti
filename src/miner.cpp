@@ -22,8 +22,11 @@
 #ifdef ENABLE_WALLET
 #include "wallet.h"
 #endif
+#include "activemasternode.h"
 #include "masternode-payments.h"
+#include "obfuscation.h"
 #include "spork.h"
+#include "stakepointer.h"
 
 #include <boost/thread.hpp>
 #include <boost/tuple/tuple.hpp>
@@ -138,13 +141,27 @@ CBlockTemplate* CreateNewBlock(const CScript& scriptPubKeyIn, CWallet* pwallet, 
         CMutableTransaction txCoinStake;
         int64_t nSearchTime = pblock->nTime; // search to current time
         bool fStakeFound = false;
+        bool fSpForkActive = (pindexPrev->nHeight + 1 >= Params().StakePointerForkHeight());
+
         if (nSearchTime >= nLastCoinStakeSearchTime) {
             unsigned int nTxNewTime = 0;
-            if (pwallet->CreateCoinStake(*pwallet, pblock->nBits, nSearchTime - nLastCoinStakeSearchTime, txCoinStake, nTxNewTime)) {
-                pblock->nTime = nTxNewTime;
-                pblock->vtx[0].vout[0].SetEmpty();
-                pblock->vtx.push_back(CTransaction(txCoinStake));
-                fStakeFound = true;
+            if (fSpForkActive) {
+                StakePointer stakePointer;
+                if (pwallet->CreateCoinStakeV5(pblock->nBits, nSearchTime - nLastCoinStakeSearchTime, txCoinStake, nTxNewTime, stakePointer)) {
+                    pblock->nTime = nTxNewTime;
+                    pblock->nVersion = 5;
+                    pblock->vtx[0].vout[0].SetEmpty();
+                    pblock->vtx.push_back(CTransaction(txCoinStake));
+                    pblock->stakePointer = stakePointer;
+                    fStakeFound = true;
+                }
+            } else {
+                if (pwallet->CreateCoinStake(*pwallet, pblock->nBits, nSearchTime - nLastCoinStakeSearchTime, txCoinStake, nTxNewTime)) {
+                    pblock->nTime = nTxNewTime;
+                    pblock->vtx[0].vout[0].SetEmpty();
+                    pblock->vtx.push_back(CTransaction(txCoinStake));
+                    fStakeFound = true;
+                }
             }
             nLastCoinStakeSearchInterval = nSearchTime - nLastCoinStakeSearchTime;
             nLastCoinStakeSearchTime = nSearchTime;
@@ -498,7 +515,8 @@ void BitcoinMiner(CWallet* pwallet, bool fProofOfStake)
                 bool fPassStakeCheck = fSpForkActive || fMintableCoins;
                 bool fPassBalanceCheck = fSpForkActive || (nReserveBalance < pwallet->GetBalance());
 
-                while (chainActive.Tip()->nTime < 1471482000 || vNodes.empty() || pwallet->IsLocked() ||
+                bool fWalletLocked = !fSpForkActive && pwallet->IsLocked();
+                while (chainActive.Tip()->nTime < 1471482000 || vNodes.empty() || fWalletLocked ||
                        !fPassStakeCheck || !fPassBalanceCheck || !masternodeSync.IsSynced()) {
                     nLastCoinStakeSearchInterval = 0;
                     MilliSleep(5000);
@@ -508,6 +526,7 @@ void BitcoinMiner(CWallet* pwallet, bool fProofOfStake)
                     fSpForkActive     = (chainActive.Tip()->nHeight + 1 >= Params().StakePointerForkHeight());
                     fPassStakeCheck   = fSpForkActive || fMintableCoins;
                     fPassBalanceCheck = fSpForkActive || (nReserveBalance < pwallet->GetBalance());
+                    fWalletLocked     = !fSpForkActive && pwallet->IsLocked();
                 }
             }
 
@@ -543,23 +562,27 @@ void BitcoinMiner(CWallet* pwallet, bool fProofOfStake)
             int nNewHeight = pindexPrev->nHeight + 1;
             bool fSpForkActive = (nNewHeight >= Params().StakePointerForkHeight());
 
-            if (fSpForkActive) {
-                // StakePointer path: get the pointer and attach it before signing.
-                StakePointer stakePointer;
-                if (!pwallet->GetStakePointer(stakePointer)) {
-                    // This node has no eligible stake pointer; skip block assembly.
-                    MilliSleep(5000);
-                    continue;
-                }
-                pblock->stakePointer = stakePointer;
-                // nVersion was already set to 5 in CreateNewBlock.
-            }
-
             LogPrintf("CPUMiner : proof-of-stake block found %s \n", pblock->GetHash().ToString().c_str());
 
-            if (!pblock->SignBlock(*pwallet)) {
-                LogPrintf("BitcoinMiner(): Signing new block failed \n");
-                continue;
+            if (fSpForkActive) {
+                // Version-5 StakePointer path: sign with the MN hot key.
+                // The stakePointer was already attached in CreateNewBlock via CreateCoinStakeV5.
+                std::string errorMessage;
+                CKey keyMasternode;
+                CPubKey pubKeyMasternode;
+                if (!obfuScationSigner.SetKey(strMasterNodePrivKey, errorMessage, keyMasternode, pubKeyMasternode)) {
+                    LogPrintf("BitcoinMiner(): v5 signing failed — SetKey: %s\n", errorMessage);
+                    continue;
+                }
+                if (!keyMasternode.Sign(pblock->GetHash(), pblock->vchBlockSig)) {
+                    LogPrintf("BitcoinMiner(): v5 signing failed — Sign\n");
+                    continue;
+                }
+            } else {
+                if (!pblock->SignBlock(*pwallet)) {
+                    LogPrintf("BitcoinMiner(): Signing new block failed \n");
+                    continue;
+                }
             }
 
             LogPrintf("CPUMiner : proof-of-stake block was signed %s \n", pblock->GetHash().ToString().c_str());

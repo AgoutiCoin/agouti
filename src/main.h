@@ -145,7 +145,6 @@ extern bool fVerifyingBlocks;
 extern bool fLargeWorkForkFound;
 extern bool fLargeWorkInvalidChainFound;
 
-extern unsigned int nStakeMinAge;
 
 // Height at which the off-by-one in block value/payment calculation is corrected
 static const int CORRECT_BLOCK_HEIGHT_FORK = 2675000;

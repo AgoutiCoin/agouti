@@ -10,6 +10,7 @@
 #include "masternodeman.h"
 #include "protocol.h"
 #include "spork.h"
+#include "stakepointer.h"
 
 //
 // Bootup the Masternode, look for a 3000 AGU input and register on the network
@@ -36,7 +37,20 @@ void CActiveMasternode::ManageStatus()
         pmn = mnodeman.Find(pubKeyMasternode);
         if (pmn != NULL) {
             pmn->Check();
-            if (pmn->IsEnabled() && pmn->protocolVersion == PROTOCOL_VERSION) EnableHotColdMasterNode(pmn->vin, pmn->addr);
+            if (pmn->IsEnabled() && pmn->protocolVersion == PROTOCOL_VERSION) {
+                EnableHotColdMasterNode(pmn->vin, pmn->addr);
+                // Pick up the collateral → MN key sign-over for stakepointer
+                if (!pmn->vchSignover.empty() && vchSigSignover.empty()) {
+                    StakePointer spCheck;
+                    spCheck.pubKeyCollateral = pmn->pubKeyCollateralAddress;
+                    spCheck.pubKeyProofOfStake = pmn->pubKeyMasternode;
+                    spCheck.vchSigCollateralSignOver = pmn->vchSignover;
+                    if (spCheck.VerifyCollateralSignOver()) {
+                        vchSigSignover = pmn->vchSignover;
+                        LogPrintf("CActiveMasternode::ManageStatus() - picked up sign-over from mnodeman\n");
+                    }
+                }
+            }
         }
     }
 
@@ -359,6 +373,13 @@ bool CActiveMasternode::Register(CTxIn vin, CService service, CKey keyCollateral
         errorMessage = strprintf("Failed to sign broadcast, vin: %s", vin.ToString());
         LogPrintf("CActiveMasternode::Register() - %s\n", errorMessage);
         return false;
+    }
+
+    // Create collateral → MN key delegation for stakepointer.
+    if (!StakePointer::CreateCollateralSignOver(keyCollateralAddress, pubKeyMasternode, mnb.vchSignover)) {
+        LogPrintf("CActiveMasternode::Register() - failed to create sign-over\n");
+    } else {
+        LogPrintf("CActiveMasternode::Register() - sign-over created (%d bytes)\n", mnb.vchSignover.size());
     }
     mnodeman.mapSeenMasternodeBroadcast.insert(make_pair(mnb.GetHash(), mnb));
     masternodeSync.AddedMasternodeList(mnb.GetHash());

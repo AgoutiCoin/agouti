@@ -100,6 +100,9 @@ public:
     int ModifierUpgradeBlock() const { return nModifierUpdateBlock; }
     int LAST_POW_BLOCK() const { return nLastPOWBlock; }
 
+    /** Minimum coin age (seconds) before a UTXO is eligible to stake **/
+    unsigned int StakeMinAge() const { return nStakeMinAge; }
+
     /** StakePointer PoS kernel (version-5 blocks) **/
     int KernelModifierOffset() const { return nKernelModifierOffset; }
     int ValidStakePointerDuration() const { return nStakePointerValidityPeriod; }
@@ -146,6 +149,8 @@ protected:
     int nMintRequiredConfirmations;
     int nRequiredAccumulation;
     int64_t nBudget_Fee_Confirmations;
+
+    unsigned int nStakeMinAge;
 
     // StakePointer parameters
     int nKernelModifierOffset;

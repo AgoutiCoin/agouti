@@ -144,6 +144,7 @@ public:
     int nScanningErrorCount;
     int nLastScanningErrorBlockHeight;
     CMasternodePing lastPing;
+    std::vector<unsigned char> vchSignover; // collateral → MN key delegation for stakepointer
 
     int64_t nLastDsee;  // temporary, do not save. Remove after migration to v12
     int64_t nLastDseep; // temporary, do not save. Remove after migration to v12
@@ -176,6 +177,7 @@ public:
         swap(first.nLastDsq, second.nLastDsq);
         swap(first.nScanningErrorCount, second.nScanningErrorCount);
         swap(first.nLastScanningErrorBlockHeight, second.nLastScanningErrorBlockHeight);
+        swap(first.vchSignover, second.vchSignover);
     }
 
     CMasternode& operator=(CMasternode from)
@@ -217,6 +219,7 @@ public:
         READWRITE(nLastDsq);
         READWRITE(nScanningErrorCount);
         READWRITE(nLastScanningErrorBlockHeight);
+        READWRITE(vchSignover);
     }
 
     int64_t SecondsSincePayment();
@@ -317,6 +320,7 @@ public:
         READWRITE(protocolVersion);
         READWRITE(lastPing);
         READWRITE(nLastDsq);
+        READWRITE(vchSignover);
     }
 
     uint256 GetHash()

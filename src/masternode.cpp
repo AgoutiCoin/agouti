@@ -7,6 +7,7 @@
 #include "addrman.h"
 #include "masternodeman.h"
 #include "obfuscation.h"
+#include "stakepointer.h"
 #include "sync.h"
 #include "util.h"
 #include <boost/lexical_cast.hpp>
@@ -80,6 +81,7 @@ CMasternode::CMasternode()
     lastTimeChecked = 0;
     nLastDsee = 0;  // temporary, do not save. Remove after migration to v12
     nLastDseep = 0; // temporary, do not save. Remove after migration to v12
+    vchSignover = std::vector<unsigned char>();
 }
 
 CMasternode::CMasternode(const CMasternode& other)
@@ -105,6 +107,7 @@ CMasternode::CMasternode(const CMasternode& other)
     lastTimeChecked = 0;
     nLastDsee = other.nLastDsee;   // temporary, do not save. Remove after migration to v12
     nLastDseep = other.nLastDseep; // temporary, do not save. Remove after migration to v12
+    vchSignover = other.vchSignover;
 }
 
 CMasternode::CMasternode(const CMasternodeBroadcast& mnb)
@@ -130,6 +133,7 @@ CMasternode::CMasternode(const CMasternodeBroadcast& mnb)
     lastTimeChecked = 0;
     nLastDsee = 0;  // temporary, do not save. Remove after migration to v12
     nLastDseep = 0; // temporary, do not save. Remove after migration to v12
+    vchSignover = mnb.vchSignover;
 }
 
 //
@@ -144,6 +148,7 @@ bool CMasternode::UpdateFromNewBroadcast(CMasternodeBroadcast& mnb)
         sig = mnb.sig;
         protocolVersion = mnb.protocolVersion;
         addr = mnb.addr;
+        vchSignover = mnb.vchSignover;
         lastTimeChecked = 0;
         int nDoS = 0;
         if (mnb.lastPing == CMasternodePing() || (mnb.lastPing != CMasternodePing() && mnb.lastPing.CheckAndUpdate(nDoS, false))) {
@@ -457,6 +462,27 @@ bool CMasternodeBroadcast::Create(CTxIn txin, CService service, CKey keyCollater
         return false;
     }
 
+    // Create collateral → MN key delegation for stakepointer.
+    // The collateral key signs over staking rights to the MN hot key so the
+    // VPS can produce PoS blocks without the cold wallet being unlocked.
+    if (!StakePointer::CreateCollateralSignOver(keyCollateralAddressNew, pubKeyMasternodeNew, mnbRet.vchSignover)) {
+        LogPrintf("CMasternodeBroadcast::Create -- FAILED to create sign-over for masternode=%s\n", txin.prevout.hash.ToString());
+    } else {
+        LogPrintf("CMasternodeBroadcast::Create -- sign-over created (%d bytes) for masternode=%s collateral=%s mnkey=%s\n",
+                  mnbRet.vchSignover.size(), txin.prevout.hash.ToString(),
+                  CBitcoinAddress(pubKeyCollateralAddressNew.GetID()).ToString(),
+                  pubKeyMasternodeNew.GetID().ToString());
+        // Immediate self-test: verify what we just signed.
+        StakePointer spTest;
+        spTest.pubKeyCollateral = pubKeyCollateralAddressNew;
+        spTest.pubKeyProofOfStake = pubKeyMasternodeNew;
+        spTest.vchSigCollateralSignOver = mnbRet.vchSignover;
+        if (!spTest.VerifyCollateralSignOver())
+            LogPrintf("CMasternodeBroadcast::Create -- WARNING: self-test FAILED for sign-over!\n");
+        else
+            LogPrintf("CMasternodeBroadcast::Create -- sign-over self-test passed\n");
+    }
+
     return true;
 }
 
@@ -548,16 +574,44 @@ bool CMasternodeBroadcast::CheckAndUpdate(int& nDos)
 bool CMasternodeBroadcast::CheckInputsAndAdd(int& nDoS)
 {
     // we are a masternode with the same vin (i.e. already activated) and this mnb is ours (matches our Masternode privkey)
-    // so nothing to do here for us
-    if (fMasterNode && vin.prevout == activeMasternode.vin.prevout && pubKeyMasternode == activeMasternode.pubKeyMasternode)
+    // so nothing to do here for us — but pick up the sign-over if present
+    if (fMasterNode && vin.prevout == activeMasternode.vin.prevout && pubKeyMasternode == activeMasternode.pubKeyMasternode) {
+        if (!vchSignover.empty() && activeMasternode.vchSigSignover.empty()) {
+            // Verify before storing
+            StakePointer spCheck;
+            spCheck.pubKeyCollateral = pubKeyCollateralAddress;
+            spCheck.pubKeyProofOfStake = pubKeyMasternode;
+            spCheck.vchSigCollateralSignOver = vchSignover;
+            if (spCheck.VerifyCollateralSignOver()) {
+                activeMasternode.vchSigSignover = vchSignover;
+                LogPrint("masternode", "CheckInputsAndAdd -- picked up sign-over for our masternode %s\n", vin.prevout.hash.ToString());
+            }
+        }
         return true;
+    }
 
     // search existing Masternode list
     CMasternode* pmn = mnodeman.Find(vin);
 
     if (pmn != NULL) {
-        // nothing to do here if we already know about this masternode and it's enabled
-        if (pmn->IsEnabled()) return true;
+        if (pmn->IsEnabled()) {
+            // Update sign-over if the existing entry lacks one.
+            if (!vchSignover.empty() && pmn->vchSignover.empty())
+                pmn->vchSignover = vchSignover;
+            // If this is our MN, pick up the sign-over for staking.
+            if (fMasterNode && pubKeyMasternode == activeMasternode.pubKeyMasternode &&
+                !vchSignover.empty() && activeMasternode.vchSigSignover.empty()) {
+                StakePointer spCheck;
+                spCheck.pubKeyCollateral = pubKeyCollateralAddress;
+                spCheck.pubKeyProofOfStake = pubKeyMasternode;
+                spCheck.vchSigCollateralSignOver = vchSignover;
+                if (spCheck.VerifyCollateralSignOver()) {
+                    activeMasternode.vchSigSignover = vchSignover;
+                    LogPrintf("CheckInputsAndAdd -- picked up sign-over for existing enabled masternode %s\n", vin.prevout.hash.ToString());
+                }
+            }
+            return true;
+        }
         // if it's not enabled, remove old MN first and continue
         else
             mnodeman.Remove(pmn->vin);
@@ -618,6 +672,17 @@ bool CMasternodeBroadcast::CheckInputsAndAdd(int& nDoS)
     // if it matches our Masternode privkey, then we've been remotely activated
     if (pubKeyMasternode == activeMasternode.pubKeyMasternode && protocolVersion == PROTOCOL_VERSION) {
         activeMasternode.EnableHotColdMasterNode(vin, addr);
+        // Pick up the sign-over for stakepointer
+        if (!vchSignover.empty() && activeMasternode.vchSigSignover.empty()) {
+            StakePointer spCheck;
+            spCheck.pubKeyCollateral = pubKeyCollateralAddress;
+            spCheck.pubKeyProofOfStake = pubKeyMasternode;
+            spCheck.vchSigCollateralSignOver = vchSignover;
+            if (spCheck.VerifyCollateralSignOver()) {
+                activeMasternode.vchSigSignover = vchSignover;
+                LogPrint("masternode", "CheckInputsAndAdd -- picked up sign-over on remote activation %s\n", vin.prevout.hash.ToString());
+            }
+        }
     }
 
     bool isLocal = addr.IsRFC1918() || addr.IsLocal();

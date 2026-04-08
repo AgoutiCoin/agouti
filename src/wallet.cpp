@@ -7,16 +7,20 @@
 
 #include "wallet.h"
 
+#include "activemasternode.h"
 #include "base58.h"
 #include "checkpoints.h"
 #include "coincontrol.h"
 #include "kernel.h"
 #include "masternode-budget.h"
+#include "masternodeman.h"
 #include "net.h"
+#include "obfuscation.h"
 #include "primitives/transaction.h"
 #include "script/script.h"
 #include "script/sign.h"
 #include "spork.h"
+#include "stakepointer.h"
 #include "swifttx.h"
 #include "timedata.h"
 #include "util.h"
@@ -376,6 +380,8 @@ set<uint256> CWallet::GetConflicts(const uint256& txid) const
     std::pair<TxSpends::const_iterator, TxSpends::const_iterator> range;
 
     BOOST_FOREACH (const CTxIn& txin, wtx.vin) {
+        if (txin.prevout.IsNull())
+            continue; // v5 coinstakes: null prevout is not a real spend
         if (mapTxSpends.count(txin.prevout) <= 1 || wtx.IsZerocoinSpend())
             continue; // No conflict if zero or one spends
         range = mapTxSpends.equal_range(txin.prevout);
@@ -450,6 +456,8 @@ void CWallet::AddToSpends(const uint256& wtxid)
     assert(mapWallet.count(wtxid));
     CWalletTx& thisTx = mapWallet[wtxid];
     if (thisTx.IsCoinBase()) // Coinbases don't spend anything!
+        return;
+    if (thisTx.IsCoinStake() && thisTx.vin[0].prevout.IsNull()) // v5 coinstakes don't spend a real UTXO
         return;
 
     BOOST_FOREACH (const CTxIn& txin, thisTx.vin)
@@ -781,8 +789,13 @@ bool CWallet::AddToWalletIfInvolvingMe(const CTransaction& tx, const CBlock* pbl
 void CWallet::SyncTransaction(const CTransaction& tx, const CBlock* pblock)
 {
     LOCK2(cs_main, cs_wallet);
-    if (!AddToWalletIfInvolvingMe(tx, pblock, true))
+    if (!AddToWalletIfInvolvingMe(tx, pblock, true)) {
+        if (tx.IsV5CoinStake())
+            LogPrintf("SyncTransaction: v5 coinstake %s NOT added to wallet (not involving me)\n", tx.GetHash().ToString());
         return; // Not one of ours
+    }
+    if (tx.IsV5CoinStake())
+        LogPrintf("SyncTransaction: v5 coinstake %s ADDED to wallet\n", tx.GetHash().ToString());
 
     // If a transaction changes 'conflicted' state, that changes the balance
     // available of the outputs it spends. So force those to be
@@ -1706,7 +1719,7 @@ bool CWallet::SelectStakeCoins(std::set<std::pair<const CWalletTx*, unsigned int
         }
 
         //check for min age
-        if (GetAdjustedTime() - nTxTime < nStakeMinAge)
+        if (GetAdjustedTime() - nTxTime < Params().StakeMinAge())
             continue;
 
         //check that it is matured
@@ -1739,99 +1752,11 @@ bool CWallet::MintableCoins()
             nTxTime = mapBlockIndex.at(out.tx->hashBlock)->GetBlockTime();
         }
 
-        if (GetAdjustedTime() - nTxTime > nStakeMinAge)
+        if (GetAdjustedTime() - nTxTime > Params().StakeMinAge())
             return true;
     }
 
     return false;
-}
-
-bool CWallet::GetStakePointer(StakePointer& stakePointerOut) const
-{
-    // cs_main must be held by caller when IsStakePointerUsed is queried.
-    // We acquire both locks here in the canonical order.
-    LOCK2(cs_main, cs_wallet);
-
-    const CBlockIndex* pindexTip = chainActive.Tip();
-    if (!pindexTip)
-        return false;
-
-    int nTipHeight            = pindexTip->nHeight;
-    int nValidityPeriod       = Params().ValidStakePointerDuration();
-    int nReorgDepth           = Params().MaxReorganizationDepth();
-    int nMinPointerHeight     = nTipHeight - nValidityPeriod;  // oldest acceptable pointer block
-    int nMaxPointerHeight     = nTipHeight - nReorgDepth;      // most recent acceptable pointer block
-
-    if (nMaxPointerHeight <= nMinPointerHeight)
-        return false; // window not wide enough (typically only relevant on regtest)
-
-    // Walk all wallet transactions looking for outputs paid to one of our keys
-    // that originate from a confirmed block in the valid height range.
-    BOOST_FOREACH (const PAIRTYPE(uint256, CWalletTx)& item, mapWallet) {
-        const CWalletTx& wtx = item.second;
-
-        // Transaction must be confirmed in a block.
-        if (wtx.hashBlock.IsNull() || !mapBlockIndex.count(wtx.hashBlock))
-            continue;
-
-        const CBlockIndex* pindexBlock = mapBlockIndex.at(wtx.hashBlock);
-
-        // Block must be on the active chain.
-        if (!chainActive.Contains(pindexBlock))
-            continue;
-
-        int nBlockHeight = pindexBlock->nHeight;
-
-        // Pointer block must be within the validity window.
-        if (nBlockHeight < nMinPointerHeight || nBlockHeight > nMaxPointerHeight)
-            continue;
-
-        // Skip budget (superblock) payment blocks.
-        if (IsSporkActive(SPORK_13_ENABLE_SUPERBLOCKS) &&
-            budget.IsBudgetPaymentBlock(nBlockHeight))
-            continue;
-
-        // Scan outputs of this transaction.
-        for (unsigned int nPos = 0; nPos < wtx.vout.size(); nPos++) {
-            const CTxOut& txout = wtx.vout[nPos];
-
-            if (txout.nValue <= 0)
-                continue;
-
-            // Output must be spendable by this wallet.
-            CTxDestination dest;
-            if (!ExtractDestination(txout.scriptPubKey, dest))
-                continue;
-
-            CKeyID keyID;
-            if (!CBitcoinAddress(dest).GetKeyID(keyID))
-                continue;
-
-            CKey key;
-            if (!GetKey(keyID, key))
-                continue; // not our key
-
-            CPubKey pubKeyCollateral = key.GetPubKey();
-
-            // Build a candidate outpoint and check it hasn't been used already.
-            COutPoint outpoint(wtx.GetHash(), nPos);
-            if (IsStakePointerUsed(pindexTip, outpoint))
-                continue;
-
-            // Valid pointer found — build and return it.
-            stakePointerOut.SetNull();
-            stakePointerOut.hashBlock          = wtx.hashBlock;
-            stakePointerOut.txid               = wtx.GetHash();
-            stakePointerOut.nPos               = nPos;
-            stakePointerOut.pubKeyCollateral   = pubKeyCollateral;
-            stakePointerOut.pubKeyProofOfStake = pubKeyCollateral; // hot-key delegation deferred
-            // vchSigCollateralSignOver left empty (same key)
-
-            return true;
-        }
-    }
-
-    return false; // no eligible stake pointer found
 }
 
 bool CWallet::SelectCoinsMinConf(const CAmount& nTargetValue, int nConfMine, int nConfTheirs, vector<COutput> vCoins, set<pair<const CWalletTx*, unsigned int> >& setCoinsRet, CAmount& nValueRet) const
@@ -2616,14 +2541,8 @@ bool CWallet::CreateCoinStake(const CKeyStore& keystore, unsigned int nBits, int
         COutPoint prevoutStake = COutPoint(pcoin.first->GetHash(), pcoin.second);
         nTxNewTime = GetAdjustedTime();
 
-        // Above the StakePointer fork height the kernel is validated externally via
-        // CheckStakePointerKernelHash; any mature UTXO may be used for the coinstake output.
-        bool fStakePointerMode = (chainActive.Height() + 1 >= Params().StakePointerForkHeight());
-
-        if (fStakePointerMode ||
-            CheckStakeKernelHash(nBits, block, *pcoin.first, prevoutStake, nTxNewTime, nHashDrift, false, hashProofOfStake, true, chainActive.Height() + 1)) {
-            // Time check only applies to the legacy kernel.
-            if (!fStakePointerMode && nTxNewTime <= chainActive.Tip()->GetMedianTimePast()) {
+        if (CheckStakeKernelHash(nBits, block, *pcoin.first, prevoutStake, nTxNewTime, nHashDrift, false, hashProofOfStake, true, chainActive.Height() + 1)) {
+            if (nTxNewTime <= chainActive.Tip()->GetMedianTimePast()) {
                 LogPrintf("CreateCoinStake() : kernel found, but it is too far in the past \n");
                 continue;
             }
@@ -2731,6 +2650,138 @@ bool CWallet::CreateCoinStake(const CKeyStore& keystore, unsigned int nBits, int
     // Successfully generated coinstake
     nLastStakeSetUpdate = 0; //this will trigger stake set to repopulate next round
     return true;
+}
+
+bool CWallet::CreateCoinStakeV5(unsigned int nBits, int64_t nSearchInterval, CMutableTransaction& txNew, unsigned int& nTxNewTime, StakePointer& stakePointerOut)
+{
+    // Version-5 coinstake: no wallet UTXO required.
+    // Walk the chain for recent MN reward payments to our collateral address.
+    LOCK(cs_main);
+
+    if (!fMasterNode) {
+        LogPrint("stakepointer", "CreateCoinStakeV5 : not a masternode\n");
+        return false;
+    }
+
+    CMasternode* pmn = mnodeman.Find(activeMasternode.pubKeyMasternode);
+    if (!pmn) {
+        LogPrint("stakepointer", "CreateCoinStakeV5 : masternode not found in mnodeman\n");
+        return false;
+    }
+    if (!pmn->IsEnabled()) {
+        LogPrint("stakepointer", "CreateCoinStakeV5 : masternode not enabled (state=%d)\n", pmn->activeState);
+        return false;
+    }
+
+    CPubKey pubKeyCollateral = pmn->pubKeyCollateralAddress;
+    CScript scriptCollateral = GetScriptForDestination(pubKeyCollateral.GetID());
+
+    const CBlockIndex* pindexPrev = chainActive.Tip();
+    if (!pindexPrev) return false;
+
+    int nNewHeight        = pindexPrev->nHeight + 1;
+    int nValidityPeriod   = Params().ValidStakePointerDuration();
+    int nReorgDepth       = Params().MaxReorganizationDepth();
+    int nMinPointerHeight = nNewHeight - nValidityPeriod;
+    int nMaxPointerHeight = nNewHeight - nReorgDepth;
+
+    if (nMinPointerHeight < 0) nMinPointerHeight = 0;
+    if (nMaxPointerHeight <= nMinPointerHeight) {
+        LogPrint("stakepointer", "CreateCoinStakeV5 : pointer window empty (min=%d max=%d)\n", nMinPointerHeight, nMaxPointerHeight);
+        return false;
+    }
+
+    LogPrint("stakepointer", "CreateCoinStakeV5 : searching for pointer in blocks [%d..%d] for height %d, collateral=%s\n",
+             nMinPointerHeight, nMaxPointerHeight, nNewHeight,
+             CBitcoinAddress(pubKeyCollateral.GetID()).ToString());
+
+    // Prevent staking a time that won't be accepted.
+    if (GetAdjustedTime() <= pindexPrev->nTime)
+        MilliSleep(10000);
+
+    nTxNewTime = GetAdjustedTime();
+
+    // Walk blocks in the validity window looking for outputs paying our collateral address.
+    int nCandidateOutputs = 0;
+    int nKernelAttempts = 0;
+    for (int nHeight = nMaxPointerHeight; nHeight >= nMinPointerHeight; nHeight--) {
+        CBlockIndex* pindexCandidate = chainActive[nHeight];
+        if (!pindexCandidate) continue;
+
+        // Skip budget (superblock) payment blocks.
+        if (IsSporkActive(SPORK_13_ENABLE_SUPERBLOCKS) &&
+            budget.IsBudgetPaymentBlock(nHeight))
+            continue;
+
+        CBlock block;
+        if (!ReadBlockFromDisk(block, pindexCandidate->GetBlockPos()))
+            continue;
+
+        // Scan all transactions in the block for outputs paying our collateral address.
+        for (unsigned int txIdx = 0; txIdx < block.vtx.size(); txIdx++) {
+            const CTransaction& tx = block.vtx[txIdx];
+            for (unsigned int nPos = 0; nPos < tx.vout.size(); nPos++) {
+                const CTxOut& txout = tx.vout[nPos];
+                if (txout.nValue <= 0) continue;
+                if (txout.scriptPubKey != scriptCollateral) continue;
+
+                nCandidateOutputs++;
+                COutPoint outpoint(tx.GetHash(), nPos);
+                if (IsStakePointerUsed(pindexPrev, outpoint)) continue;
+
+                // Try kernel hash with the current timestamp.
+                nKernelAttempts++;
+                uint256 hashProofOfStake = 0;
+                if (!CheckStakePointerKernelHash(nBits, outpoint, pindexCandidate,
+                                                  pindexPrev, nTxNewTime, hashProofOfStake))
+                    continue;
+
+                if (nTxNewTime <= pindexPrev->GetMedianTimePast()) continue;
+
+                // Found a valid kernel — build v5 coinstake.
+                txNew.vin.clear();
+                txNew.vout.clear();
+
+                // vout[0]: empty marker (required by IsCoinStake)
+                CScript scriptEmpty;
+                scriptEmpty.clear();
+                txNew.vout.push_back(CTxOut(0, scriptEmpty));
+
+                // vin[0]: OP_PROOFOFSTAKE marker with null prevout + height (BIP34-style uniqueness)
+                CTxIn vinMarker;
+                vinMarker.prevout.SetNull();
+                vinMarker.scriptSig = CScript() << OP_PROOFOFSTAKE << nNewHeight;
+                txNew.vin.push_back(vinMarker);
+
+                // vout[1]: block reward to collateral address (P2PKH)
+                CAmount nReward = GetBlockValue(pindexPrev->nHeight);
+                CScript scriptPubKeyOut = GetScriptForDestination(pubKeyCollateral.GetID());
+                txNew.vout.push_back(CTxOut(nReward, scriptPubKeyOut));
+
+                // Masternode payment (appends vout and subtracts from vout[1])
+                CAmount nMinFee = 0;
+                FillBlockPayee(txNew, nMinFee, true);
+
+                // Populate stakePointer output for block header.
+                stakePointerOut.SetNull();
+                stakePointerOut.hashBlock          = pindexCandidate->GetBlockHash();
+                stakePointerOut.txid               = tx.GetHash();
+                stakePointerOut.nPos               = nPos;
+                stakePointerOut.pubKeyCollateral   = pubKeyCollateral;
+                stakePointerOut.pubKeyProofOfStake = pmn->pubKeyMasternode;
+                stakePointerOut.vchSigCollateralSignOver = activeMasternode.vchSigSignover;
+
+                LogPrintf("CreateCoinStakeV5 : found kernel at height %d txid %s nPos %u signover=%s\n",
+                          nHeight, tx.GetHash().ToString(), nPos,
+                          activeMasternode.vchSigSignover.empty() ? "EMPTY" : "present");
+                return true;
+            }
+        }
+    }
+
+    LogPrint("stakepointer", "CreateCoinStakeV5 : no kernel found (%d candidate outputs, %d kernel attempts)\n",
+             nCandidateOutputs, nKernelAttempts);
+    return false;
 }
 
 /**

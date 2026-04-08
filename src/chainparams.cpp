@@ -167,6 +167,8 @@ public:
         nRequiredAccumulation = 1;
         nBudget_Fee_Confirmations = 6; // Number of confirmations for the finalization fee
 
+        nStakeMinAge = 60 * 60; // 1 hour
+
         /** StakePointer PoS kernel — set nStakePointerForkHeight before mainnet activation */
         nKernelModifierOffset       = 100;    // must equal nMaxReorganizationDepth
         nStakePointerValidityPeriod = 4320;   // ~30 days at 600 s/block (post-2565000)
@@ -199,7 +201,7 @@ public:
         nMinerThreads = 0;
         nTargetTimespan = 10;  // Agouti: 10 seconds
         nTargetSpacing = 10;   // Agouti: 10 seconds
-        nLastPOWBlock = 300;
+        nLastPOWBlock = 100;
         nMaturity = 15;
         nMasternodeCountDrift = 4;
         nModifierUpdateBlock = 51197; //approx Mon, 17 Apr 2017 04:00:00 GMT
@@ -244,10 +246,13 @@ public:
         nBudget_Fee_Confirmations = 3; // Number of confirmations for the finalization fee. We have to make this very short
                                        // here because we only have a 8 block finalization window on testnet
 
+        nStakeMinAge = 5 * 60; // 5 minutes
+        nMaxReorganizationDepth = 10;
+
         /** StakePointer PoS kernel — shorter periods for testnet */
         nKernelModifierOffset       = 10;
         nStakePointerValidityPeriod = 200;
-        nStakePointerForkHeight     = 600;
+        nStakePointerForkHeight     = 150;
     }
     const Checkpoints::CCheckpointData& Checkpoints() const
     {
@@ -294,6 +299,8 @@ public:
         fRequireStandard = false;
         fMineBlocksOnDemand = true;
         fTestnetToBeDeprecatedFieldRPC = false;
+
+        nStakeMinAge = 60; // 1 minute
 
         /** StakePointer PoS kernel — minimal windows for regtest */
         nKernelModifierOffset       = 5;

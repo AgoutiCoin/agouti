@@ -79,7 +79,7 @@ bool fVerifyingBlocks = false;
 unsigned int nCoinCacheSize = 5000;
 bool fAlerts = DEFAULT_ALERTS;
 
-unsigned int nStakeMinAge = 60 * 60;
+
 int64_t nReserveBalance = 0;
 
 /** Fees smaller than this (in duffs) are considered zero fee (for relaying and mining)
@@ -957,7 +957,7 @@ bool GetCoinAge(const CTransaction& tx, const unsigned int nTxTime, uint64_t& nC
         // Read block header
         CBlockHeader prevblock = pindex->GetBlockHeader();
 
-        if (prevblock.nTime + nStakeMinAge > nTxTime)
+        if (prevblock.nTime + Params().StakeMinAge() > nTxTime)
             continue; // only count coins meeting min age requirement
 
         if (nTxTime < prevblock.nTime) {
@@ -1026,6 +1026,11 @@ bool CheckTransaction(const CTransaction& tx, CValidationState& state)
         if (tx.vin[0].scriptSig.size() < 2 || tx.vin[0].scriptSig.size() > 150)
             return state.DoS(100, error("CheckTransaction() : coinbase script size=%d", tx.vin[0].scriptSig.size()),
                 REJECT_INVALID, "bad-cb-length");
+    } else if (tx.IsV5CoinStake()) {
+        // v5 coinstake: null prevout with OP_PROOFOFSTAKE marker — no inputs to validate.
+        if (tx.vin[0].scriptSig.size() > 100)
+            return state.DoS(100, error("CheckTransaction() : v5 coinstake script size too large"),
+                REJECT_INVALID, "bad-cs-length");
     } else {
         BOOST_FOREACH (const CTxIn& txin, tx.vin)
             if (txin.prevout.IsNull())
@@ -1804,8 +1809,8 @@ void static InvalidBlockFound(CBlockIndex* pindex, const CValidationState& state
 
 void UpdateCoins(const CTransaction& tx, CValidationState& state, CCoinsViewCache& inputs, CTxUndo& txundo, int nHeight)
 {
-    // mark inputs spent
-    if (!tx.IsCoinBase()) {
+    // mark inputs spent — v5 coinstakes have no real inputs (like coinbase)
+    if (!tx.IsCoinBase() && !tx.IsV5CoinStake()) {
         txundo.vprevout.reserve(tx.vin.size());
         BOOST_FOREACH (const CTxIn& txin, tx.vin) {
             txundo.vprevout.push_back(CTxInUndo());
@@ -1829,7 +1834,7 @@ bool CScriptCheck::operator()()
 
 bool CheckInputs(const CTransaction& tx, CValidationState& state, const CCoinsViewCache& inputs, bool fScriptChecks, unsigned int flags, bool cacheStore, std::vector<CScriptCheck>* pvChecks)
 {
-    if (!tx.IsCoinBase()) {
+    if (!tx.IsCoinBase() && !tx.IsV5CoinStake()) {
         if (pvChecks)
             pvChecks->reserve(tx.vin.size());
 
@@ -1974,8 +1979,8 @@ bool DisconnectBlock(CBlock& block, CValidationState& state, CBlockIndex* pindex
             outs->Clear();
         }
 
-        // restore inputs
-        if (!tx.IsCoinBase()) {
+        // restore inputs — v5 coinstakes have no real inputs (like coinbase)
+        if (!tx.IsCoinBase() && !tx.IsV5CoinStake()) {
             const CTxUndo& txundo = blockUndo.vtxundo[i - 1];
             if (txundo.vprevout.size() != tx.vin.size())
                 return error("DisconnectBlock() : transaction and undo data inconsistent - txundo.vprevout.siz=%d tx.vin.siz=%d", txundo.vprevout.size(), tx.vin.size());
@@ -2079,7 +2084,7 @@ bool RecalculateAGUSupply(int nHeightStart)
         CAmount nValueOut = 0;
         for (const CTransaction tx : block.vtx) {
             for (unsigned int i = 0; i < tx.vin.size(); i++) {
-                if (tx.IsCoinBase())
+                if (tx.IsCoinBase() || tx.IsV5CoinStake())
                     break;
 
                 if (tx.vin[i].scriptSig.IsZerocoinSpend()) {
@@ -2220,7 +2225,7 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                 if (txIn.scriptSig.IsZerocoinSpend())
                     nValueIn += (CAmount)txIn.nSequence * COIN;
             }
-        } else if (!tx.IsCoinBase()) {
+        } else if (!tx.IsCoinBase() && !tx.IsV5CoinStake()) {
             if (!view.HaveInputs(tx))
                 return state.DoS(100, error("ConnectBlock() : inputs missing/spent"),
                     REJECT_INVALID, "bad-txns-inputs-missingorspent");

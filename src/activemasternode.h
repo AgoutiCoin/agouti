@@ -52,6 +52,10 @@ public:
     int status;
     std::string notCapableReason;
 
+    // Collateral → MN key delegation signature for stakepointer.
+    // Populated from the masternode broadcast when this is our MN.
+    std::vector<unsigned char> vchSigSignover;
+
     CActiveMasternode()
     {
         status = ACTIVE_MASTERNODE_INITIAL;

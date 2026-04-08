@@ -28,7 +28,7 @@ class CBlockHeader
 {
 public:
     // header
-    static const int32_t CURRENT_VERSION=4;
+    static const int32_t CURRENT_VERSION=5;
     int32_t nVersion;
     uint256 hashPrevBlock;
     uint256 hashMerkleRoot;
@@ -167,7 +167,12 @@ public:
 
     std::pair<COutPoint, unsigned int> GetProofOfStake() const
     {
-        return IsProofOfStake()? std::make_pair(vtx[1].vin[0].prevout, nTime) : std::make_pair(COutPoint(), (unsigned int)0);
+        if (!IsProofOfStake())
+            return std::make_pair(COutPoint(), (unsigned int)0);
+        // v5 coinstakes have a null prevout; use the stakePointer outpoint instead.
+        if (vtx[1].IsV5CoinStake())
+            return std::make_pair(COutPoint(stakePointer.txid, stakePointer.nPos), nTime);
+        return std::make_pair(vtx[1].vin[0].prevout, nTime);
     }
 
     // Build the in-memory merkle tree for this block and return the merkle root.

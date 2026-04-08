@@ -260,6 +260,12 @@ bool CScript::IsZerocoinSpend() const
         this->at(0) == OP_ZEROCOINSPEND);
 }
 
+bool CScript::IsProofOfStakeMarker() const
+{
+    return (this->size() > 0 &&
+        this->at(0) == OP_PROOFOFSTAKE);
+}
+
 bool CScript::IsPushOnly(const_iterator pc) const
 {
     while (pc < end())

@@ -6,6 +6,7 @@
 #ifndef BITCOIN_STAKEPOINTER_H
 #define BITCOIN_STAKEPOINTER_H
 
+#include "key.h"
 #include "pubkey.h"
 #include "serialize.h"
 #include "uint256.h"
@@ -66,6 +67,14 @@ public:
     /** Verify that pubKeyCollateral signed staking rights over to pubKeyProofOfStake.
      *  Only called when the two keys differ. */
     bool VerifyCollateralSignOver() const;
+
+    /** Compute the hash that the collateral key signs to delegate staking to pubKeyPoS. */
+    static uint256 CollateralSignOverHash(const CPubKey& pubKeyPoS);
+
+    /** Create the delegation signature (cold-wallet operation, requires collateral private key). */
+    static bool CreateCollateralSignOver(const CKey& keyCollateral,
+                                         const CPubKey& pubKeyPoS,
+                                         std::vector<unsigned char>& vchSigOut);
 };
 
 #endif // BITCOIN_STAKEPOINTER_H
