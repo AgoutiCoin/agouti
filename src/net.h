@@ -72,6 +72,12 @@ CNode* FindNode(const std::string& addrName);
 CNode* FindNode(const CService& ip);
 CNode* ConnectNode(CAddress addrConnect, const char* pszDest = NULL, bool obfuScationMaster = false);
 bool OpenNetworkConnection(const CAddress& addrConnect, CSemaphoreGrant* grantOutbound = NULL, const char* strDest = NULL, bool fOneShot = false);
+enum OutboundConnectionAttempt {
+    OUTBOUND_CONNECTION_STOP,
+    OUTBOUND_CONNECTION_SKIP,
+    OUTBOUND_CONNECTION_CONNECT
+};
+OutboundConnectionAttempt GetOutboundConnectionAttempt(const CAddress& addr, bool fConnectedGroup, int64_t nANow, int nTries);
 void MapPort(bool fUseUPnP);
 unsigned short GetListenPort();
 bool BindListenPort(const CService& bindAddr, std::string& strError, bool fWhitelisted = false);

@@ -1178,6 +1178,25 @@ void static ProcessOneShot()
     }
 }
 
+OutboundConnectionAttempt GetOutboundConnectionAttempt(const CAddress& addr, bool fConnectedGroup, int64_t nANow, int nTries)
+{
+    if (!addr.IsValid() || nTries > 100)
+        return OUTBOUND_CONNECTION_STOP;
+
+    if (fConnectedGroup || IsLocal(addr) || IsLimited(addr))
+        return OUTBOUND_CONNECTION_SKIP;
+
+    // only consider very recently tried nodes after 30 failed attempts
+    if (nANow - addr.nLastTry < 600 && nTries < 30)
+        return OUTBOUND_CONNECTION_SKIP;
+
+    // do not allow non-default ports, unless after 50 invalid addresses selected already
+    if (addr.GetPort() != Params().GetDefaultPort() && nTries < 50)
+        return OUTBOUND_CONNECTION_SKIP;
+
+    return OUTBOUND_CONNECTION_CONNECT;
+}
+
 void ThreadOpenConnections()
 {
     // Connect to specific addresses
@@ -1239,27 +1258,13 @@ void ThreadOpenConnections()
         int nTries = 0;
         while (true) {
             CAddress addr = addrman.Select();
-
-            // if we selected an invalid address, restart
-            if (!addr.IsValid() || setConnected.count(addr.GetGroup()) || IsLocal(addr))
-                break;
-
-            // If we didn't find an appropriate destination after trying 100 addresses fetched from addrman,
-            // stop this loop, and let the outer loop run again (which sleeps, adds seed nodes, recalculates
-            // already-connected network ranges, ...) before trying new addrman addresses.
             nTries++;
-            if (nTries > 100)
+
+            // Stop after 100 attempts and keep sampling when an address is merely unsuitable for this cycle.
+            OutboundConnectionAttempt attempt = GetOutboundConnectionAttempt(addr, addr.IsValid() && setConnected.count(addr.GetGroup()), nANow, nTries);
+            if (attempt == OUTBOUND_CONNECTION_STOP)
                 break;
-
-            if (IsLimited(addr))
-                continue;
-
-            // only consider very recently tried nodes after 30 failed attempts
-            if (nANow - addr.nLastTry < 600 && nTries < 30)
-                continue;
-
-            // do not allow non-default ports, unless after 50 invalid addresses selected already
-            if (addr.GetPort() != Params().GetDefaultPort() && nTries < 50)
+            if (attempt == OUTBOUND_CONNECTION_SKIP)
                 continue;
 
             addrConnect = addr;
