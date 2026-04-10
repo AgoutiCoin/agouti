@@ -297,14 +297,16 @@ bool CActiveMasternode::SendIPUpdateIfNeeded(std::string& errorMessage)
         return false;
     }
 
-    // Verify the new address is reachable before broadcasting.
+    // A self-connect check is only advisory here. Home routers often do not
+    // support NAT hairpin, so a local connect to our own public IP can fail
+    // even though the masternode is externally reachable.
     CNode* pnode = ConnectNode((CAddress)serviceNow, NULL, false);
     if (!pnode) {
-        LogPrintf("CActiveMasternode::SendIPUpdateIfNeeded() - WARNING: new address %s is not reachable, skipping update\n",
+        LogPrintf("CActiveMasternode::SendIPUpdateIfNeeded() - WARNING: could not self-connect to %s, continuing with IP update anyway\n",
                   serviceNow.ToString());
-        return true; // not fatal — retry on next cycle when address may become reachable
+    } else {
+        pnode->Release();
     }
-    pnode->Release();
 
     CMasternodeIPUpdate mnip(vin, serviceNow);
     if (!mnip.Sign(keyMN, pubKeyMN)) {

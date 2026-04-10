@@ -95,6 +95,27 @@ void CMasternodeConfig::deleteAlias(int index)
     entries.erase(entries.begin() + index);
 }
 
+bool CMasternodeConfig::updateIp(const std::string& txHash, const std::string& outputIndex, const std::string& ip,
+    std::string* aliasOut, std::string* oldIpOut, std::string* privKeyOut)
+{
+    BOOST_FOREACH (CMasternodeEntry& mne, entries) {
+        if (mne.getTxHash() != txHash || mne.getOutputIndex() != outputIndex)
+            continue;
+
+        if (aliasOut)
+            *aliasOut = mne.getAlias();
+        if (oldIpOut)
+            *oldIpOut = mne.getIp();
+        if (privKeyOut)
+            *privKeyOut = mne.getPrivKey();
+
+        mne.setIp(ip);
+        return true;
+    }
+
+    return false;
+}
+
 bool CMasternodeConfig::writeToMasternodeConf()
 {
     boost::filesystem::path pathMasternodeConfigFile = GetMasternodeConfigFile();

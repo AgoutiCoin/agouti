@@ -7,6 +7,7 @@
 #include "activemasternode.h"
 #include "addrman.h"
 #include "masternode.h"
+#include "masternodeconfig.h"
 #include "obfuscation.h"
 #include "spork.h"
 #include "util.h"
@@ -41,6 +42,89 @@ struct CompareScoreMN {
         return t1.first < t2.first;
     }
 };
+
+static void SyncLocalMasternodeIPUpdate(const CMasternodeIPUpdate& mnip)
+{
+    const std::string strTxHash = mnip.vin.prevout.hash.ToString();
+    const std::string strOutputIndex = boost::lexical_cast<std::string>(mnip.vin.prevout.n);
+    const std::string strNewAddr = mnip.addr.ToString();
+
+    std::string strAlias;
+    std::string strOldAddr;
+    std::string strPrivKey;
+    if (!masternodeConfig.updateIp(strTxHash, strOutputIndex, strNewAddr, &strAlias, &strOldAddr, &strPrivKey))
+        return;
+
+    if (strOldAddr == strNewAddr)
+        return;
+
+    LogPrintf("CMasternodeMan::SyncLocalMasternodeIPUpdate() - updating masternode.conf entry %s: %s -> %s\n",
+              strAlias.empty() ? strTxHash : strAlias, strOldAddr, strNewAddr);
+
+    if (!masternodeConfig.writeToMasternodeConf()) {
+        LogPrintf("CMasternodeMan::SyncLocalMasternodeIPUpdate() - failed to persist masternode.conf entry %s\n",
+                  strAlias.empty() ? strTxHash : strAlias);
+    }
+
+    // Cold wallets keep the durable, collateral-signed mnb record. Refresh it
+    // after an IP update so newly syncing peers learn the new address too.
+    if (fMasterNode || pwalletMain == NULL)
+        return;
+
+    if (pwalletMain->IsLocked()) {
+        LogPrintf("CMasternodeMan::SyncLocalMasternodeIPUpdate() - wallet locked, cannot re-activate %s at %s\n",
+                  strAlias.empty() ? strTxHash : strAlias, strNewAddr);
+        return;
+    }
+
+    std::string strError;
+    if (!activeMasternode.Register(strNewAddr, strPrivKey, strTxHash, strOutputIndex, strError)) {
+        LogPrintf("CMasternodeMan::SyncLocalMasternodeIPUpdate() - failed to re-activate %s at %s: %s\n",
+                  strAlias.empty() ? strTxHash : strAlias, strNewAddr, strError);
+        return;
+    }
+
+    LogPrintf("CMasternodeMan::SyncLocalMasternodeIPUpdate() - re-activated %s at %s\n",
+              strAlias.empty() ? strTxHash : strAlias, strNewAddr);
+}
+
+static void HandleAcceptedMasternodeIPUpdate(const CMasternodeIPUpdate& mnip, const CNetAddr& addrSource, bool fRelay)
+{
+    addrman.Add(CAddress(mnip.addr), addrSource, 2 * 60 * 60);
+    if (fRelay) {
+        CMasternodeIPUpdate mnipRelay = mnip;
+        mnipRelay.Relay();
+    }
+    SyncLocalMasternodeIPUpdate(mnip);
+}
+
+static bool ApplyLatestMasternodeIPUpdate(const CTxIn& vin, const CNetAddr& addrSource)
+{
+    map<uint256, CMasternodeIPUpdate>::iterator it = mnodeman.mapSeenMasternodeIPUpdate.begin();
+    map<uint256, CMasternodeIPUpdate>::iterator itBest = mnodeman.mapSeenMasternodeIPUpdate.end();
+    while (it != mnodeman.mapSeenMasternodeIPUpdate.end()) {
+        if ((*it).second.vin == vin &&
+            (itBest == mnodeman.mapSeenMasternodeIPUpdate.end() || (*it).second.sigTime > (*itBest).second.sigTime)) {
+            itBest = it;
+        }
+        ++it;
+    }
+
+    if (itBest == mnodeman.mapSeenMasternodeIPUpdate.end())
+        return false;
+
+    int nDoS = 0;
+    if (!(*itBest).second.CheckAndUpdate(nDoS)) {
+        if (nDoS > 0) {
+            LogPrint("masternode", "ApplyLatestMasternodeIPUpdate - cached update rejected for %s\n",
+                     vin.prevout.hash.ToString());
+        }
+        return false;
+    }
+
+    HandleAcceptedMasternodeIPUpdate((*itBest).second, addrSource, false);
+    return true;
+}
 
 //
 // CMasternodeDB
@@ -772,6 +856,7 @@ void CMasternodeMan::ProcessMessage(CNode* pfrom, std::string& strCommand, CData
         if (mnb.CheckInputsAndAdd(nDoS)) {
             // use this as a peer
             addrman.Add(CAddress(mnb.addr), pfrom->addr, 2 * 60 * 60);
+            ApplyLatestMasternodeIPUpdate(mnb.vin, pfrom->addr);
             masternodeSync.AddedMasternodeList(mnb.GetHash());
         } else {
             LogPrint("masternode","mnb - Rejected Masternode entry %s\n", mnb.vin.prevout.hash.ToString());
@@ -904,9 +989,7 @@ void CMasternodeMan::ProcessMessage(CNode* pfrom, std::string& strCommand, CData
 
         int nDoS = 0;
         if (mnip.CheckAndUpdate(nDoS)) {
-            // Accepted — update addrman and relay.
-            addrman.Add(CAddress(mnip.addr), pfrom->addr, 2 * 60 * 60);
-            mnip.Relay();
+            HandleAcceptedMasternodeIPUpdate(mnip, pfrom->addr, true);
         } else {
             if (nDoS > 0)
                 Misbehaving(pfrom->GetId(), nDoS);

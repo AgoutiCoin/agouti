@@ -99,6 +99,8 @@ public:
     bool read(std::string& strErr);
     void add(std::string alias, std::string ip, std::string privKey, std::string txHash, std::string outputIndex);
     void deleteAlias(int index);
+    bool updateIp(const std::string& txHash, const std::string& outputIndex, const std::string& ip,
+        std::string* aliasOut = NULL, std::string* oldIpOut = NULL, std::string* privKeyOut = NULL);
     bool writeToMasternodeConf();
 
     std::vector<CMasternodeEntry>& getEntries()
