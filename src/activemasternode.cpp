@@ -155,6 +155,12 @@ void CActiveMasternode::ManageStatus()
         if (!errorMessage.empty())
             LogPrintf("CActiveMasternode::ManageStatus() - IP update: %s\n", errorMessage);
     }
+
+    // Flush deferred masternode.conf write (set by Register() when it corrected a stale IP).
+    if (fConfNeedsWrite) {
+        masternodeConfig.writeToMasternodeConf();
+        fConfNeedsWrite = false;
+    }
 }
 
 std::string CActiveMasternode::GetStatus()
@@ -263,12 +269,16 @@ bool CActiveMasternode::SendIPUpdateIfNeeded(std::string& errorMessage)
     if (status != ACTIVE_MASTERNODE_STARTED) return true; // nothing to do
 
     // Detect current external address.
+    // Prefer GetLocal() which is updated by peer-reported addresses and UPnP.
+    // Fall back to -masternodeaddr only if GetLocal() has nothing routable
+    // (e.g. early boot before any peer connections).
     CService serviceNow;
-    if (!strMasterNodeAddr.empty()) {
+    bool fDetected = GetLocal(serviceNow) && serviceNow.IsRoutable();
+    if (!fDetected && !strMasterNodeAddr.empty()) {
         serviceNow = CService(strMasterNodeAddr);
-    } else {
-        if (!GetLocal(serviceNow)) return true; // cannot detect, skip silently
+        fDetected = serviceNow.IsValid();
     }
+    if (!fDetected) return true; // cannot detect, skip silently
 
     // Preserve the port from our original registration.
     serviceNow = CService(serviceNow.ToStringIP(), service.GetPort());
@@ -287,6 +297,15 @@ bool CActiveMasternode::SendIPUpdateIfNeeded(std::string& errorMessage)
         return false;
     }
 
+    // Verify the new address is reachable before broadcasting.
+    CNode* pnode = ConnectNode((CAddress)serviceNow, NULL, false);
+    if (!pnode) {
+        LogPrintf("CActiveMasternode::SendIPUpdateIfNeeded() - WARNING: new address %s is not reachable, skipping update\n",
+                  serviceNow.ToString());
+        return true; // not fatal — retry on next cycle when address may become reachable
+    }
+    pnode->Release();
+
     CMasternodeIPUpdate mnip(vin, serviceNow);
     if (!mnip.Sign(keyMN, pubKeyMN)) {
         errorMessage = "Could not sign IP update message";
@@ -295,14 +314,25 @@ bool CActiveMasternode::SendIPUpdateIfNeeded(std::string& errorMessage)
 
     // Apply locally.
     CMasternode* pmn = mnodeman.Find(vin);
-    if (pmn != NULL)
+    if (pmn != NULL) {
         pmn->addr = serviceNow;
+        pmn->nLastIPUpdateTime = mnip.sigTime;
+    }
 
     service = serviceNow;
 
     // Insert into seen map and relay.
     mnodeman.mapSeenMasternodeIPUpdate.insert(make_pair(mnip.GetHash(), mnip));
     mnip.Relay();
+
+    // Update masternode.conf so the entry survives restart.
+    BOOST_FOREACH (CMasternodeConfig::CMasternodeEntry& mne, masternodeConfig.getEntries()) {
+        if (mne.getPrivKey() == strMasterNodePrivKey) {
+            mne.setIp(serviceNow.ToString());
+            fConfNeedsWrite = true;
+            break;
+        }
+    }
 
     LogPrintf("CActiveMasternode::SendIPUpdateIfNeeded() - Relayed IP update to %s\n",
               serviceNow.ToString());
@@ -338,6 +368,38 @@ bool CActiveMasternode::Register(std::string strService, std::string strKeyMaste
     }
 
     CService service = CService(strService);
+
+    // When this node IS the masternode and this conf entry is ours,
+    // the conf IP may be stale (dynamic IP changed).  Use the current
+    // detected address so the broadcast is valid from the start.
+    if (fMasterNode && pubKeyMasternode == activeMasternode.pubKeyMasternode) {
+        CService serviceCurrent;
+        bool fDetected = GetLocal(serviceCurrent) && serviceCurrent.IsRoutable();
+        if (!fDetected && !strMasterNodeAddr.empty()) {
+            serviceCurrent = CService(strMasterNodeAddr);
+            fDetected = serviceCurrent.IsValid() && serviceCurrent.IsRoutable();
+        }
+
+        if (fDetected) {
+            serviceCurrent = CService(serviceCurrent.ToStringIP(), service.GetPort());
+            if (serviceCurrent != service) {
+                LogPrintf("CActiveMasternode::Register() - conf IP %s is stale, using detected IP %s\n",
+                          service.ToString(), serviceCurrent.ToString());
+                service = serviceCurrent;
+
+                // Update the in-memory entry; defer file write to ManageStatus
+                // to avoid iterator invalidation when called from a start-all loop.
+                BOOST_FOREACH (CMasternodeConfig::CMasternodeEntry& mne, masternodeConfig.getEntries()) {
+                    if (mne.getTxHash() == strTxHash && mne.getOutputIndex() == strOutputIndex) {
+                        mne.setIp(service.ToString());
+                        fConfNeedsWrite = true;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     if (Params().NetworkID() == CBaseChainParams::MAIN) {
         if (service.GetPort() != 5151) {
             errorMessage = strprintf("Invalid port %u for masternode %s - only 5151 is supported on mainnet.", service.GetPort(), strService);
@@ -352,7 +414,7 @@ bool CActiveMasternode::Register(std::string strService, std::string strKeyMaste
 
     addrman.Add(CAddress(service), CNetAddr("127.0.0.1"), 2 * 60 * 60);
 
-    return Register(vin, CService(strService), keyCollateralAddress, pubKeyCollateralAddress, keyMasternode, pubKeyMasternode, errorMessage);
+    return Register(vin, service, keyCollateralAddress, pubKeyCollateralAddress, keyMasternode, pubKeyMasternode, errorMessage);
 }
 
 bool CActiveMasternode::Register(CTxIn vin, CService service, CKey keyCollateralAddress, CPubKey pubKeyCollateralAddress, CKey keyMasternode, CPubKey pubKeyMasternode, std::string& errorMessage)

@@ -4593,6 +4593,8 @@ bool static AlreadyHave(const CInv& inv)
         return false;
     case MSG_MASTERNODE_PING:
         return mnodeman.mapSeenMasternodePing.count(inv.hash);
+    case MSG_MASTERNODE_IP_UPDATE:
+        return mnodeman.mapSeenMasternodeIPUpdate.count(inv.hash);
     }
     // Don't know what it is, just say we already got one
     return true;
@@ -4792,6 +4794,16 @@ void static ProcessGetData(CNode* pfrom)
                     }
                 }
 
+                if (!pushed && inv.type == MSG_MASTERNODE_IP_UPDATE) {
+                    if (mnodeman.mapSeenMasternodeIPUpdate.count(inv.hash)) {
+                        CDataStream ss(SER_NETWORK, PROTOCOL_VERSION);
+                        ss.reserve(1000);
+                        ss << mnodeman.mapSeenMasternodeIPUpdate[inv.hash];
+                        pfrom->PushMessage("mnipupdate", ss);
+                        pushed = true;
+                    }
+                }
+
                 if (!pushed && inv.type == MSG_DSTX) {
                     if (mapObfuscationBroadcastTxes.count(inv.hash)) {
                         CDataStream ss(SER_NETWORK, PROTOCOL_VERSION);
@@ -4895,8 +4907,13 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
         }
 
         pfrom->addrLocal = addrMe;
-        if (pfrom->fInbound && addrMe.IsRoutable()) {
-            SeenLocal(addrMe);
+        if (addrMe.IsRoutable()) {
+            // If this address is unknown, add it so GetLocal() can
+            // discover public IP changes (essential for dynamic-IP MNs).
+            // SeenLocal only increments existing entries; AddLocal creates
+            // new ones.  Use LOCAL_IF so it won't override -externalip.
+            if (!SeenLocal(addrMe))
+                AddLocal(addrMe, LOCAL_IF);
         }
 
         // Be shy and don't send version until we hear

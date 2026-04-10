@@ -82,6 +82,7 @@ CMasternode::CMasternode()
     nLastDsee = 0;  // temporary, do not save. Remove after migration to v12
     nLastDseep = 0; // temporary, do not save. Remove after migration to v12
     vchSignover = std::vector<unsigned char>();
+    nLastIPUpdateTime = 0;
 }
 
 CMasternode::CMasternode(const CMasternode& other)
@@ -108,6 +109,7 @@ CMasternode::CMasternode(const CMasternode& other)
     nLastDsee = other.nLastDsee;   // temporary, do not save. Remove after migration to v12
     nLastDseep = other.nLastDseep; // temporary, do not save. Remove after migration to v12
     vchSignover = other.vchSignover;
+    nLastIPUpdateTime = other.nLastIPUpdateTime;
 }
 
 CMasternode::CMasternode(const CMasternodeBroadcast& mnb)
@@ -134,6 +136,7 @@ CMasternode::CMasternode(const CMasternodeBroadcast& mnb)
     nLastDsee = 0;  // temporary, do not save. Remove after migration to v12
     nLastDseep = 0; // temporary, do not save. Remove after migration to v12
     vchSignover = mnb.vchSignover;
+    nLastIPUpdateTime = 0;
 }
 
 //
@@ -880,6 +883,14 @@ bool CMasternodeIPUpdate::CheckAndUpdate(int& nDos)
         return false;
     }
 
+    // Reject signatures too far in the past (prevents replay after restart).
+    if (sigTime <= GetAdjustedTime() - 60 * 60) {
+        LogPrint("masternode", "mnipupdate - Signature rejected, too far into the past %s\n",
+                 vin.prevout.hash.ToString());
+        nDos = 1;
+        return false;
+    }
+
     // Find the masternode by VIN.
     CMasternode* pmn = mnodeman.Find(vin);
     if (pmn == NULL) {
@@ -888,8 +899,8 @@ bool CMasternodeIPUpdate::CheckAndUpdate(int& nDos)
     }
 
     // Rate-limit: only accept one update per MASTERNODE_MIN_MNIP_SECONDS.
-    if (sigTime - pmn->sigTime < MASTERNODE_MIN_MNIP_SECONDS) {
-        LogPrint("masternode", "mnipupdate - Too soon after last broadcast for %s\n",
+    if (pmn->nLastIPUpdateTime > 0 && sigTime - pmn->nLastIPUpdateTime < MASTERNODE_MIN_MNIP_SECONDS) {
+        LogPrint("masternode", "mnipupdate - Too soon after last IP update for %s\n",
                  vin.prevout.hash.ToString());
         nDos = 1;
         return false;
@@ -912,6 +923,7 @@ bool CMasternodeIPUpdate::CheckAndUpdate(int& nDos)
              vin.prevout.hash.ToString(), pmn->addr.ToString(), addr.ToString());
 
     pmn->addr = addr;
+    pmn->nLastIPUpdateTime = sigTime;
 
     return true;
 }

@@ -146,6 +146,8 @@ public:
     CMasternodePing lastPing;
     std::vector<unsigned char> vchSignover; // collateral → MN key delegation for stakepointer
 
+    int64_t nLastIPUpdateTime; // timestamp of last accepted IP update (not serialised)
+
     int64_t nLastDsee;  // temporary, do not save. Remove after migration to v12
     int64_t nLastDseep; // temporary, do not save. Remove after migration to v12
 
@@ -178,6 +180,7 @@ public:
         swap(first.nScanningErrorCount, second.nScanningErrorCount);
         swap(first.nLastScanningErrorBlockHeight, second.nLastScanningErrorBlockHeight);
         swap(first.vchSignover, second.vchSignover);
+        swap(first.nLastIPUpdateTime, second.nLastIPUpdateTime);
     }
 
     CMasternode& operator=(CMasternode from)

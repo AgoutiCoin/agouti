@@ -1051,7 +1051,15 @@ void ThreadMapPort()
                         port, port, lanaddr, r, strupnperror(r));
                 else
                     LogPrintf("UPnP Port Mapping successful.\n");
-                ;
+
+                // Re-query external IP so dynamic changes are picked up.
+                if (fDiscover) {
+                    char externalIPAddress[40];
+                    r = UPNP_GetExternalIPAddress(urls.controlURL, data.first.servicetype, externalIPAddress);
+                    if (r == UPNPCOMMAND_SUCCESS && externalIPAddress[0]) {
+                        AddLocal(CNetAddr(externalIPAddress), LOCAL_UPNP);
+                    }
+                }
 
                 MilliSleep(20 * 60 * 1000); // Refresh every 20 minutes
             }

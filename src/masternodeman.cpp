@@ -334,6 +334,16 @@ void CMasternodeMan::CheckAndRemove(bool forceExpiredRemoval)
             ++it4;
         }
     }
+
+    // remove expired mapSeenMasternodeIPUpdate
+    map<uint256, CMasternodeIPUpdate>::iterator it5 = mapSeenMasternodeIPUpdate.begin();
+    while (it5 != mapSeenMasternodeIPUpdate.end()) {
+        if ((*it5).second.sigTime < GetTime() - (MASTERNODE_REMOVAL_SECONDS * 2)) {
+            mapSeenMasternodeIPUpdate.erase(it5++);
+        } else {
+            ++it5;
+        }
+    }
 }
 
 void CMasternodeMan::Clear()
@@ -345,6 +355,7 @@ void CMasternodeMan::Clear()
     mWeAskedForMasternodeListEntry.clear();
     mapSeenMasternodeBroadcast.clear();
     mapSeenMasternodePing.clear();
+    mapSeenMasternodeIPUpdate.clear();
     nDsqCount = 0;
 }
 
@@ -829,18 +840,50 @@ void CMasternodeMan::ProcessMessage(CNode* pfrom, std::string& strCommand, CData
             if (mn.IsEnabled()) {
                 LogPrint("masternode", "dseg - Sending Masternode entry - %s \n", mn.vin.prevout.hash.ToString());
                 if (vin == CTxIn() || vin == mn.vin) {
-                    CMasternodeBroadcast mnb = CMasternodeBroadcast(mn);
-                    uint256 hash = mnb.GetHash();
+                    // Prefer the cached broadcast (has original addr with valid signature).
+                    // Constructing a fresh one from mn would include the IP-updated addr
+                    // which would not match the original broadcast signature.
+                    uint256 hash;
+                    bool foundCached = false;
+                    map<uint256, CMasternodeBroadcast>::iterator itb = mapSeenMasternodeBroadcast.begin();
+                    while (itb != mapSeenMasternodeBroadcast.end()) {
+                        if ((*itb).second.vin == mn.vin) {
+                            hash = (*itb).first;
+                            foundCached = true;
+                            break;
+                        }
+                        ++itb;
+                    }
+                    if (!foundCached) {
+                        CMasternodeBroadcast mnb = CMasternodeBroadcast(mn);
+                        hash = mnb.GetHash();
+                        mapSeenMasternodeBroadcast.insert(make_pair(hash, mnb));
+                    }
                     pfrom->PushInventory(CInv(MSG_MASTERNODE_ANNOUNCE, hash));
                     nInvCount++;
 
-                    if (!mapSeenMasternodeBroadcast.count(hash)) mapSeenMasternodeBroadcast.insert(make_pair(hash, mnb));
-
                     if (vin == mn.vin) {
                         LogPrint("masternode", "dseg - Sent 1 Masternode entry to peer %i\n", pfrom->GetId());
+                        // Also send any IP updates for this MN so the peer
+                        // converges on the current address.
+                        map<uint256, CMasternodeIPUpdate>::iterator itip = mapSeenMasternodeIPUpdate.begin();
+                        while (itip != mapSeenMasternodeIPUpdate.end()) {
+                            if ((*itip).second.vin == mn.vin)
+                                pfrom->PushInventory(CInv(MSG_MASTERNODE_IP_UPDATE, (*itip).first));
+                            ++itip;
+                        }
                         return;
                     }
                 }
+            }
+        }
+
+        // Also relay any IP updates so syncing peers converge on current addresses.
+        {
+            map<uint256, CMasternodeIPUpdate>::iterator itip = mapSeenMasternodeIPUpdate.begin();
+            while (itip != mapSeenMasternodeIPUpdate.end()) {
+                pfrom->PushInventory(CInv(MSG_MASTERNODE_IP_UPDATE, (*itip).first));
+                ++itip;
             }
         }
 

@@ -56,9 +56,12 @@ public:
     // Populated from the masternode broadcast when this is our MN.
     std::vector<unsigned char> vchSigSignover;
 
+    bool fConfNeedsWrite; // set when Register() updated a conf entry IP
+
     CActiveMasternode()
     {
         status = ACTIVE_MASTERNODE_INITIAL;
+        fConfNeedsWrite = false;
     }
 
     /// Manage status of main Masternode
