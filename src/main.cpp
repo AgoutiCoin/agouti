@@ -3387,6 +3387,22 @@ bool CheckStake(const CBlockIndex* pindexPrev, const CBlock& block, uint256& has
 
     int nNewHeight = pindexPrev->nHeight + 1;
 
+    if (!block.IsProofOfStake())
+        return error("CheckStake(): called on non-proof-of-stake block %s", block.GetHash().ToString().c_str());
+
+    if (block.nVersion < 5)
+        return error("CheckStake(): PoS block version %d below required version 5 at height %d",
+                     block.nVersion, nNewHeight);
+
+    // The StakePointer fork replaces the legacy UTXO-based kernel with the
+    // null-prevout OP_PROOFOFSTAKE coinstake form. Reject mixed blocks so a
+    // version-5 header cannot carry a legacy coinstake across the fork.
+    if (!block.vtx[1].IsV5CoinStake())
+        return error("CheckStake(): legacy coinstake form not allowed at height %d", nNewHeight);
+
+    if (block.stakePointer.IsNull())
+        return error("CheckStake(): missing stake pointer at height %d", nNewHeight);
+
     // 1. Coinbase output must be empty for PoS.
     if (block.vtx[0].vout[0].nValue != 0)
         return error("CheckStake(): coinbase output not empty for PoS block");
@@ -3440,8 +3456,10 @@ bool CheckWork(const CBlock& block, CBlockIndex* const pindexPrev)
 
         int nHeight = pindexPrev->nHeight + 1;
 
-        // Version-5 PoS blocks above the StakePointer fork height use the new kernel.
-        if (block.nVersion >= 5 && nHeight >= Params().StakePointerForkHeight()) {
+        // The StakePointer fork switches all PoS validation to the new kernel
+        // from the fork height onward. CheckStake() then enforces the v5 block
+        // version, v5 coinstake form, and non-null stake pointer.
+        if (nHeight >= Params().StakePointerForkHeight()) {
             if (!CheckStake(pindexPrev, block, hashProofOfStake)) {
                 LogPrintf("WARNING: CheckWork(): StakePointer check failed for block %s\n",
                           hash.ToString().c_str());
@@ -3529,13 +3547,23 @@ bool ContextualCheckBlock(const CBlock& block, CValidationState& state, CBlockIn
             return state.DoS(10, error("%s : contains a non-final transaction", __func__), REJECT_INVALID, "bad-txns-nonfinal");
         }
 
-    // Enforce version-5 (StakePointer) for PoS blocks at and above the fork height.
-    // Reject old-version PoS blocks so the pre-fork chain cannot outpace the
-    // new stakepointer chain by accumulated work alone.
-    if (block.IsProofOfStake() && nHeight >= Params().StakePointerForkHeight() && block.nVersion < 5)
-        return state.DoS(100, error("%s : PoS block version %d below required version 5 at height %d",
-                                    __func__, block.nVersion, nHeight),
-            REJECT_INVALID, "bad-version-pos");
+    if (block.IsProofOfStake() && nHeight >= Params().StakePointerForkHeight()) {
+        // After the StakePointer fork there must be exactly one PoS dialect:
+        // version-5 blocks with the v5 null-prevout coinstake and a non-null
+        // embedded stake pointer. Anything else is a consensus collision risk.
+        if (block.nVersion < 5)
+            return state.DoS(100, error("%s : PoS block version %d below required version 5 at height %d",
+                                        __func__, block.nVersion, nHeight),
+                REJECT_INVALID, "bad-version-pos");
+        if (!block.vtx[1].IsV5CoinStake())
+            return state.DoS(100, error("%s : legacy coinstake form not allowed at height %d",
+                                        __func__, nHeight),
+                REJECT_INVALID, "bad-cs-v5-required");
+        if (block.stakePointer.IsNull())
+            return state.DoS(100, error("%s : missing stake pointer at height %d",
+                                        __func__, nHeight),
+                REJECT_INVALID, "bad-stakepointer-missing");
+    }
 
     // Height-gated PoS future drift tightening (180s -> 60s)
     if (block.IsProofOfStake() && nHeight >= POS_FUTURE_DRIFT_V2_HEIGHT) {

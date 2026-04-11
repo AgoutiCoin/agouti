@@ -45,9 +45,15 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(const CWallet* 
         CTxDestination address;
         bool fExtracted = ExtractDestination(wtx.vout[1].scriptPubKey, address);
 
-        if (fExtracted && IsMine(*wallet, address)) {
+        // Use the same script-level IsMine check as GetCredit() to guarantee
+        // that the StakeMint branch is only entered when GetCredit(vout[1]) > 0.
+        // IsMine(*wallet, address) converts to P2PKH before checking and returns
+        // true for watch-only P2PKH addresses even when the actual output script
+        // is P2PK — causing GetCredit to return 0 while GetDebit returns the full
+        // staked UTXO value, producing a spurious negative net amount.
+        isminetype mine = wallet->IsMine(wtx.vout[1]);
+        if (mine && fExtracted) {
             //stake reward — vout[1] pays to our address
-            isminetype mine = wallet->IsMine(wtx.vout[1]);
             sub.involvesWatchAddress = mine & ISMINE_WATCH_ONLY;
             sub.type = TransactionRecord::StakeMint;
             sub.address = CBitcoinAddress(address).ToString();
@@ -58,8 +64,8 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(const CWallet* 
                 CTxDestination outAddress;
                 if (ExtractDestination(wtx.vout[i].scriptPubKey, outAddress)) {
                     if (IsMine(*wallet, outAddress)) {
-                        isminetype mine = wallet->IsMine(wtx.vout[i]);
-                        sub.involvesWatchAddress = mine & ISMINE_WATCH_ONLY;
+                        isminetype mnMine = wallet->IsMine(wtx.vout[i]);
+                        sub.involvesWatchAddress = mnMine & ISMINE_WATCH_ONLY;
                         sub.type = TransactionRecord::MNReward;
                         sub.address = CBitcoinAddress(outAddress).ToString();
                         sub.credit = wtx.vout[i].nValue;

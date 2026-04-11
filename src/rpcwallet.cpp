@@ -1518,9 +1518,16 @@ Value gettransaction(const Array& params, bool fHelp)
     CAmount nNet = nCredit - nDebit;
     CAmount nFee = (wtx.IsFromMe(filter) ? wtx.GetValueOut() - nDebit : 0);
 
-    entry.push_back(Pair("amount", ValueFromAmount(nNet - nFee)));
-    if (wtx.IsFromMe(filter))
-        entry.push_back(Pair("fee", ValueFromAmount(nFee)));
+    if (wtx.IsCoinStake()) {
+        // Generated coinstakes should not surface their internal accounting as
+        // a user-paid network fee. Show the wallet's net gain from the stake,
+        // floored at zero so fee burn cannot appear as a negative "reward".
+        entry.push_back(Pair("amount", ValueFromAmount(nNet > 0 ? nNet : 0)));
+    } else {
+        entry.push_back(Pair("amount", ValueFromAmount(nNet - nFee)));
+        if (wtx.IsFromMe(filter))
+            entry.push_back(Pair("fee", ValueFromAmount(nFee)));
+    }
 
     WalletTxToJSON(wtx, entry);
 

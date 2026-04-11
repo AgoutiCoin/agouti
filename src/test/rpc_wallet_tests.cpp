@@ -6,6 +6,8 @@
 #include "rpcclient.h"
 
 #include "base58.h"
+#include "script/standard.h"
+#include "txmempool.h"
 #include "wallet.h"
 
 #include <boost/algorithm/string.hpp>
@@ -18,6 +20,80 @@ extern Array createArgs(int nRequired, const char* address1 = NULL, const char* 
 extern Value CallRPC(string args);
 
 extern CWallet* pwalletMain;
+
+namespace {
+
+static CScript NewOwnedScript()
+{
+    LOCK(pwalletMain->cs_wallet);
+    const CPubKey pubKey = pwalletMain->GenerateNewKey();
+    return GetScriptForDestination(pubKey.GetID());
+}
+
+static CScript NewExternalScript()
+{
+    CKey key;
+    key.MakeNewKey(true);
+    return GetScriptForDestination(key.GetPubKey().GetID());
+}
+
+class WalletTxScope
+{
+public:
+    WalletTxScope(const CTransaction& tx, const CAmount debit, const CAmount credit) : tx(tx), hash(tx.GetHash())
+    {
+        {
+            LOCK(pwalletMain->cs_wallet);
+            pwalletMain->mapWallet[hash] = CWalletTx(pwalletMain, tx);
+            CWalletTx& stored = pwalletMain->mapWallet[hash];
+            stored.nTimeReceived = 1;
+            stored.nTimeSmart = 1;
+            stored.nOrderPos = 0;
+            stored.fDebitCached = true;
+            stored.nDebitCached = debit;
+            stored.fCreditCached = true;
+            stored.nCreditCached = credit;
+            stored.fWatchDebitCached = true;
+            stored.nWatchDebitCached = 0;
+            stored.fWatchCreditCached = true;
+            stored.nWatchCreditCached = 0;
+        }
+
+        mempool.addUnchecked(hash, CTxMemPoolEntry(tx, 0, GetTime(), 0.0, chainActive.Height() + 1));
+    }
+
+    ~WalletTxScope()
+    {
+        std::list<CTransaction> removed;
+        mempool.remove(tx, removed, true);
+
+        LOCK(pwalletMain->cs_wallet);
+        pwalletMain->mapWallet.erase(hash);
+    }
+
+    std::string Txid() const
+    {
+        return hash.GetHex();
+    }
+
+private:
+    const CTransaction tx;
+    const uint256 hash;
+};
+
+static bool HasSendDetailForVout(const Array& details, const int vout)
+{
+    BOOST_FOREACH (const Value& value, details) {
+        const Object& detail = value.get_obj();
+        if (find_value(detail, "category").get_str() == "send" &&
+            find_value(detail, "vout").get_int() == vout) {
+            return true;
+        }
+    }
+    return false;
+}
+
+} // namespace
 
 BOOST_AUTO_TEST_SUITE(rpc_wallet_tests)
 
@@ -177,6 +253,84 @@ BOOST_AUTO_TEST_CASE(rpc_wallet)
     Array arr = retValue.get_array();
     BOOST_CHECK(arr.size() > 0);
     BOOST_CHECK(CBitcoinAddress(arr[0].get_str()).Get() == demoAddress.Get());
+}
+
+BOOST_AUTO_TEST_CASE(rpc_gettransaction_legacy_coinstake_reports_reward_and_skips_marker_send)
+{
+    static const CAmount STAKED_INPUT = 100 * COIN;
+    static const CAmount STAKE_REWARD = 87500000;
+
+    CMutableTransaction tx;
+    tx.nLockTime = 1001;
+    tx.vin.push_back(CTxIn(uint256S("01"), 0));
+    tx.vout.push_back(CTxOut());
+    tx.vout[0].SetEmpty();
+    tx.vout.push_back(CTxOut(STAKED_INPUT + STAKE_REWARD, NewOwnedScript()));
+
+    const CTransaction coinstake(tx);
+    WalletTxScope scope(coinstake, STAKED_INPUT, STAKED_INPUT + STAKE_REWARD);
+
+    const Object result = CallRPC("gettransaction " + scope.Txid()).get_obj();
+
+    BOOST_CHECK_EQUAL(AmountFromValue(find_value(result, "amount")), STAKE_REWARD);
+    BOOST_CHECK(find_value(result, "fee").type() == null_type);
+    BOOST_CHECK(find_value(result, "generated").get_bool());
+
+    const Array details = find_value(result, "details").get_array();
+    BOOST_CHECK_EQUAL(details.size(), 1U);
+    BOOST_CHECK(!HasSendDetailForVout(details, 0));
+}
+
+BOOST_AUTO_TEST_CASE(rpc_gettransaction_v5_coinstake_reports_staker_reward)
+{
+    static const CAmount STAKER_REWARD = 12500000;
+    static const CAmount MASTERNODE_PAYMENT = 87500000;
+
+    CMutableTransaction tx;
+    tx.nLockTime = 1002;
+    CTxIn marker;
+    marker.prevout.SetNull();
+    marker.scriptSig = CScript() << OP_PROOFOFSTAKE << 1;
+    tx.vin.push_back(marker);
+    tx.vout.push_back(CTxOut());
+    tx.vout[0].SetEmpty();
+    tx.vout.push_back(CTxOut(STAKER_REWARD, NewOwnedScript()));
+    tx.vout.push_back(CTxOut(MASTERNODE_PAYMENT, NewExternalScript()));
+
+    const CTransaction coinstake(tx);
+    WalletTxScope scope(coinstake, 0, STAKER_REWARD);
+
+    const Object result = CallRPC("gettransaction " + scope.Txid()).get_obj();
+
+    BOOST_CHECK_EQUAL(AmountFromValue(find_value(result, "amount")), STAKER_REWARD);
+    BOOST_CHECK(find_value(result, "fee").type() == null_type);
+    BOOST_CHECK(find_value(result, "generated").get_bool());
+
+    const Array details = find_value(result, "details").get_array();
+    BOOST_CHECK_EQUAL(details.size(), 1U);
+    BOOST_CHECK(!HasSendDetailForVout(details, 0));
+}
+
+BOOST_AUTO_TEST_CASE(rpc_gettransaction_legacy_coinstake_burn_does_not_report_negative_reward)
+{
+    static const CAmount STAKED_INPUT = 100 * COIN;
+    static const CAmount BURNED_AMOUNT = 87500000;
+
+    CMutableTransaction tx;
+    tx.nLockTime = 1003;
+    tx.vin.push_back(CTxIn(uint256S("03"), 0));
+    tx.vout.push_back(CTxOut());
+    tx.vout[0].SetEmpty();
+    tx.vout.push_back(CTxOut(STAKED_INPUT - BURNED_AMOUNT, NewOwnedScript()));
+
+    const CTransaction coinstake(tx);
+    WalletTxScope scope(coinstake, STAKED_INPUT, STAKED_INPUT - BURNED_AMOUNT);
+
+    const Object result = CallRPC("gettransaction " + scope.Txid()).get_obj();
+
+    BOOST_CHECK_EQUAL(AmountFromValue(find_value(result, "amount")), 0);
+    BOOST_CHECK(find_value(result, "fee").type() == null_type);
+    BOOST_CHECK(find_value(result, "generated").get_bool());
 }
 
 

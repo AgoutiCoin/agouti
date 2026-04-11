@@ -1075,6 +1075,11 @@ void CWalletTx::GetAmounts(list<COutputEntry>& listReceived,
         //   1) they debit from us (sent)
         //   2) the output is to us (received)
         if (nDebit > 0) {
+            // Skip the empty coinstake marker output (vout[0], nValue=0) — it is
+            // not change but also not a real send; including it produces a spurious
+            // "category:send / amount:0" entry in listtransactions.
+            if (IsCoinStake() && i == 0)
+                continue;
             // Don't report 'change' txouts
             if (pwallet->IsChange(txout))
                 continue;
@@ -2610,32 +2615,23 @@ bool CWallet::CreateCoinStake(const CKeyStore& keystore, unsigned int nBits, int
     nReward = GetBlockValue(pIndex0->nHeight);
     nCredit += nReward;
 
-    CAmount nMinFee = 0;
-    while (true) {
-        // Set output amount
-        if (txNew.vout.size() == 3) {
-            txNew.vout[1].nValue = ((nCredit - nMinFee) / 2 / CENT) * CENT;
-            txNew.vout[2].nValue = nCredit - nMinFee - txNew.vout[1].nValue;
-        } else
-            txNew.vout[1].nValue = nCredit - nMinFee;
+    // Proof-of-stake blocks are generated locally, not relayed through the
+    // mempool. Charging an estimated wallet fee here only burns the staker's
+    // balance, which can exceed the late-era classic PoS reward.
+    const CAmount nMinFee = 0;
 
-        // Limit size
-        unsigned int nBytes = ::GetSerializeSize(txNew, SER_NETWORK, PROTOCOL_VERSION);
-        if (nBytes >= DEFAULT_BLOCK_MAX_SIZE / 5)
-            return error("CreateCoinStake : exceeded coinstake size limit");
-
-        CAmount nFeeNeeded = GetMinimumFee(nBytes, nTxConfirmTarget, mempool);
-
-        // Check enough fee is paid
-        if (nMinFee < nFeeNeeded) {
-            nMinFee = nFeeNeeded;
-            continue; // try signing again
-        } else {
-            if (fDebug)
-                LogPrintf("CreateCoinStake : fee for coinstake %s\n", FormatMoney(nMinFee).c_str());
-            break;
-        }
+    // Set output amount
+    if (txNew.vout.size() == 3) {
+        txNew.vout[1].nValue = ((nCredit - nMinFee) / 2 / CENT) * CENT;
+        txNew.vout[2].nValue = nCredit - nMinFee - txNew.vout[1].nValue;
+    } else {
+        txNew.vout[1].nValue = nCredit - nMinFee;
     }
+
+    // Limit size
+    unsigned int nBytes = ::GetSerializeSize(txNew, SER_NETWORK, PROTOCOL_VERSION);
+    if (nBytes >= DEFAULT_BLOCK_MAX_SIZE / 5)
+        return error("CreateCoinStake : exceeded coinstake size limit");
 
     //Masternode payment
     FillBlockPayee(txNew, nMinFee, true);
