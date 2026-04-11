@@ -373,9 +373,10 @@ QString TransactionTableModel::formatTxType(const TransactionRecord* wtx) const
 QVariant TransactionTableModel::txAddressDecoration(const TransactionRecord* wtx) const
 {
     switch (wtx->type) {
+    case TransactionRecord::MNReward:
+        return QIcon(":/icons/masternode");
     case TransactionRecord::Generated:
     case TransactionRecord::StakeMint:
-    case TransactionRecord::MNReward:
         return QIcon(":/icons/tx_mined");
     case TransactionRecord::RecvWithObfuscation:
     case TransactionRecord::RecvWithAddress:
