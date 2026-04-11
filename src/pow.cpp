@@ -35,8 +35,15 @@ unsigned int static DarkGravityWave(const CBlockIndex* pindexLast)
 
     if (pindexLast->nHeight > Params().LAST_POW_BLOCK()) {
         uint256 bnTargetLimit = (~uint256(0) >> 24);
-        int64_t nTargetSpacing = Params().TargetSpacing();
-        int64_t nTargetTimespan = nTargetSpacing * 20;
+
+        // Restore the historical height-gated parameters so that all blocks
+        // mined under previous consensus rules pass CheckWork().
+        // Blocks below the 2565000 fork used a 60-second target (nInterval=40).
+        // Blocks at and above 2565000 switched to 600-second blocks (nInterval=4).
+        // These constants must never change; they are consensus-critical.
+        bool passed_fork = pindexLast->nHeight + 1 >= 2565000;
+        int64_t nTargetSpacing = passed_fork ? 600 : 60;
+        int64_t nTargetTimespan = 60 * 40; // 2400 — constant across both regimes
 
         // Reset difficulty at the StakePointer fork boundary so the kernel
         // weight change (legacy UTXO → MASTERNODE_COLLATERAL) does not cause
@@ -96,7 +103,10 @@ unsigned int static DarkGravityWave(const CBlockIndex* pindexLast)
 
     uint256 bnNew(PastDifficultyAverage);
 
-    int64_t _nTargetTimespan = CountBlocks * Params().TargetSpacing();
+    // PoW blocks were mined with a 60-second target; use the historical
+    // constant directly — Params().TargetSpacing() now reflects the
+    // post-2565000 PoS target (600 s) and must not be used here.
+    int64_t _nTargetTimespan = CountBlocks * 60;
 
     if (nActualTimespan < _nTargetTimespan / 3)
         nActualTimespan = _nTargetTimespan / 3;
