@@ -246,6 +246,10 @@ bool LogAcceptCategory(const char* category)
                 ptrCategory->insert(string("zero"));
                 ptrCategory->insert(string("mnbudget"));
             }
+            // "more" enables everything — equivalent to -debug=1
+            if (ptrCategory->count(string("more"))) {
+                ptrCategory->insert(string(""));
+            }
         }
         const set<string>& setCategories = *ptrCategory.get();
 

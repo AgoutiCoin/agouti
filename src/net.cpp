@@ -231,7 +231,7 @@ void AdvertizeLocal(CNode* pnode)
             addrLocal.SetIP(pnode->addrLocal);
         }
         if (addrLocal.IsRoutable()) {
-            LogPrintf("AdvertizeLocal: advertizing address %s\n", addrLocal.ToString());
+            LogPrint("net", "AdvertizeLocal: advertizing address %s\n", addrLocal.ToString());
             pnode->PushAddress(addrLocal);
         }
     }
@@ -257,7 +257,7 @@ bool AddLocal(const CService& addr, int nScore)
     if (IsLimited(addr))
         return false;
 
-    LogPrintf("AddLocal(%s,%i)\n", addr.ToString(), nScore);
+    LogPrint("net", "AddLocal(%s,%i)\n", addr.ToString(), nScore);
 
     {
         LOCK(cs_mapLocalHost);
