@@ -579,15 +579,18 @@ bool CMasternodeBroadcast::CheckInputsAndAdd(int& nDoS)
     // we are a masternode with the same vin (i.e. already activated) and this mnb is ours (matches our Masternode privkey)
     // so nothing to do here for us — but pick up the sign-over if present
     if (fMasterNode && vin.prevout == activeMasternode.vin.prevout && pubKeyMasternode == activeMasternode.pubKeyMasternode) {
-        if (!vchSignover.empty() && activeMasternode.vchSigSignover.empty()) {
-            // Verify before storing
-            StakePointer spCheck;
-            spCheck.pubKeyCollateral = pubKeyCollateralAddress;
-            spCheck.pubKeyProofOfStake = pubKeyMasternode;
-            spCheck.vchSigCollateralSignOver = vchSignover;
-            if (spCheck.VerifyCollateralSignOver()) {
-                activeMasternode.vchSigSignover = vchSignover;
-                LogPrint("masternode", "CheckInputsAndAdd -- picked up sign-over for our masternode %s\n", vin.prevout.hash.ToString());
+        if (!vchSignover.empty()) {
+            LOCK(activeMasternode.cs);
+            if (activeMasternode.vchSigSignover.empty()) {
+                // Verify before storing
+                StakePointer spCheck;
+                spCheck.pubKeyCollateral = pubKeyCollateralAddress;
+                spCheck.pubKeyProofOfStake = pubKeyMasternode;
+                spCheck.vchSigCollateralSignOver = vchSignover;
+                if (spCheck.VerifyCollateralSignOver()) {
+                    activeMasternode.vchSigSignover = vchSignover;
+                    LogPrint("masternode", "CheckInputsAndAdd -- picked up sign-over for our masternode %s\n", vin.prevout.hash.ToString());
+                }
             }
         }
         return true;
@@ -603,14 +606,17 @@ bool CMasternodeBroadcast::CheckInputsAndAdd(int& nDoS)
                 pmn->vchSignover = vchSignover;
             // If this is our MN, pick up the sign-over for staking.
             if (fMasterNode && pubKeyMasternode == activeMasternode.pubKeyMasternode &&
-                !vchSignover.empty() && activeMasternode.vchSigSignover.empty()) {
-                StakePointer spCheck;
-                spCheck.pubKeyCollateral = pubKeyCollateralAddress;
-                spCheck.pubKeyProofOfStake = pubKeyMasternode;
-                spCheck.vchSigCollateralSignOver = vchSignover;
-                if (spCheck.VerifyCollateralSignOver()) {
-                    activeMasternode.vchSigSignover = vchSignover;
-                    LogPrintf("CheckInputsAndAdd -- picked up sign-over for existing enabled masternode %s\n", vin.prevout.hash.ToString());
+                !vchSignover.empty()) {
+                LOCK(activeMasternode.cs);
+                if (activeMasternode.vchSigSignover.empty()) {
+                    StakePointer spCheck;
+                    spCheck.pubKeyCollateral = pubKeyCollateralAddress;
+                    spCheck.pubKeyProofOfStake = pubKeyMasternode;
+                    spCheck.vchSigCollateralSignOver = vchSignover;
+                    if (spCheck.VerifyCollateralSignOver()) {
+                        activeMasternode.vchSigSignover = vchSignover;
+                        LogPrintf("CheckInputsAndAdd -- picked up sign-over for existing enabled masternode %s\n", vin.prevout.hash.ToString());
+                    }
                 }
             }
             return true;
@@ -676,14 +682,17 @@ bool CMasternodeBroadcast::CheckInputsAndAdd(int& nDoS)
     if (pubKeyMasternode == activeMasternode.pubKeyMasternode && protocolVersion == PROTOCOL_VERSION) {
         activeMasternode.EnableHotColdMasterNode(vin, addr);
         // Pick up the sign-over for stakepointer
-        if (!vchSignover.empty() && activeMasternode.vchSigSignover.empty()) {
-            StakePointer spCheck;
-            spCheck.pubKeyCollateral = pubKeyCollateralAddress;
-            spCheck.pubKeyProofOfStake = pubKeyMasternode;
-            spCheck.vchSigCollateralSignOver = vchSignover;
-            if (spCheck.VerifyCollateralSignOver()) {
-                activeMasternode.vchSigSignover = vchSignover;
-                LogPrint("masternode", "CheckInputsAndAdd -- picked up sign-over on remote activation %s\n", vin.prevout.hash.ToString());
+        if (!vchSignover.empty()) {
+            LOCK(activeMasternode.cs);
+            if (activeMasternode.vchSigSignover.empty()) {
+                StakePointer spCheck;
+                spCheck.pubKeyCollateral = pubKeyCollateralAddress;
+                spCheck.pubKeyProofOfStake = pubKeyMasternode;
+                spCheck.vchSigCollateralSignOver = vchSignover;
+                if (spCheck.VerifyCollateralSignOver()) {
+                    activeMasternode.vchSigSignover = vchSignover;
+                    LogPrint("masternode", "CheckInputsAndAdd -- picked up sign-over on remote activation %s\n", vin.prevout.hash.ToString());
+                }
             }
         }
     }

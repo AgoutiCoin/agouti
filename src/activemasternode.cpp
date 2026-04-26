@@ -20,6 +20,7 @@ void CActiveMasternode::ManageStatus()
     std::string errorMessage;
 
     if (!fMasterNode) return;
+    if (!pwalletMain) return;
 
     if (fDebug) LogPrintf("CActiveMasternode::ManageStatus() - Begin\n");
 
@@ -513,7 +514,7 @@ bool CActiveMasternode::GetMasterNodeVin(CTxIn& vin, CPubKey& pubkey, CKey& secr
     if (!fWallet) return false;
 
     vector<COutput> possibleCoins = SelectCoinsMasternode();
-    COutput* selectedOutput;
+    COutput* selectedOutput = nullptr;
 
     // Find the vin
     if (!strTxHash.empty()) {

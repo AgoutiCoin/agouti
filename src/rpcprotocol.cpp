@@ -9,6 +9,7 @@
 #include "rpcprotocol.h"
 
 #include "clientversion.h"
+#include "serialize.h"
 #include "tinyformat.h"
 #include "util.h"
 #include "utilstrencodings.h"
@@ -203,8 +204,11 @@ int ReadHTTPHeaders(std::basic_istream<char>& stream, map<string, string>& mapHe
             string strValue = str.substr(nColon + 1);
             boost::trim(strValue);
             mapHeadersRet[strHeader] = strValue;
-            if (strHeader == "content-length")
-                nLen = atoi(strValue.c_str());
+            if (strHeader == "content-length") {
+                int nParsed = atoi(strValue.c_str());
+                if (nParsed >= 0 && nParsed <= (int)MAX_SIZE)
+                    nLen = nParsed;
+            }
         }
     }
     return nLen;

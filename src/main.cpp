@@ -1807,7 +1807,7 @@ void static InvalidBlockFound(CBlockIndex* pindex, const CValidationState& state
     }
 }
 
-void UpdateCoins(const CTransaction& tx, CValidationState& state, CCoinsViewCache& inputs, CTxUndo& txundo, int nHeight)
+bool UpdateCoins(const CTransaction& tx, CValidationState& state, CCoinsViewCache& inputs, CTxUndo& txundo, int nHeight)
 {
     // mark inputs spent — v5 coinstakes have no real inputs (like coinbase)
     if (!tx.IsCoinBase() && !tx.IsV5CoinStake()) {
@@ -1815,12 +1815,15 @@ void UpdateCoins(const CTransaction& tx, CValidationState& state, CCoinsViewCach
         BOOST_FOREACH (const CTxIn& txin, tx.vin) {
             txundo.vprevout.push_back(CTxInUndo());
             bool ret = inputs.ModifyCoins(txin.prevout.hash)->Spend(txin.prevout, txundo.vprevout.back());
-            assert(ret);
+            if (!ret)
+                return state.Invalid(error("UpdateCoins(): Spend failed for %s n=%d",
+                    txin.prevout.hash.ToString(), txin.prevout.n));
         }
     }
 
     // add outputs
     inputs.ModifyCoins(tx.GetHash())->FromTx(tx, nHeight);
+    return true;
 }
 
 bool CScriptCheck::operator()()
@@ -2255,7 +2258,8 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
         if (i > 0) {
             blockundo.vtxundo.push_back(CTxUndo());
         }
-        UpdateCoins(tx, state, view, i == 0 ? undoDummy : blockundo.vtxundo.back(), pindex->nHeight);
+        if (!UpdateCoins(tx, state, view, i == 0 ? undoDummy : blockundo.vtxundo.back(), pindex->nHeight))
+            return false;
 
         vPos.push_back(std::make_pair(tx.GetHash(), pos));
         pos.nTxOffset += ::GetSerializeSize(tx, SER_DISK, CLIENT_VERSION);
@@ -3206,7 +3210,7 @@ bool CheckBlock(const CBlock& block, CValidationState& state, bool fCheckPOW, bo
             return state.DoS(100, error("CheckBlock() : coinbase output not empty for proof-of-stake block"));
 
         // Second transaction must be coinstake, the rest must not be
-        if (block.vtx.empty() || !block.vtx[1].IsCoinStake())
+        if (block.vtx.size() < 2 || !block.vtx[1].IsCoinStake())
             return state.DoS(100, error("CheckBlock() : second tx is not coinstake"));
         for (unsigned int i = 2; i < block.vtx.size(); i++)
             if (block.vtx[i].IsCoinStake())
@@ -4071,7 +4075,7 @@ bool static LoadBlockIndexDB()
     LogPrintf("%s: Last shutdown was prepared: %s\n", __func__, fLastShutdownWasPrepared);
 
     //Check for inconsistency with block file info and internal state
-    if (!fLastShutdownWasPrepared && !GetBoolArg("-forcestart", false) && !GetBoolArg("-reindex", false) && (vSortedByHeight.size() != vinfoBlockFile[nLastBlockFile].nHeightLast + 1) && (vinfoBlockFile[nLastBlockFile].nHeightLast != 0)) {
+    if (!fLastShutdownWasPrepared && !GetBoolArg("-forcestart", false) && !GetBoolArg("-reindex", false) && !vSortedByHeight.empty() && (vSortedByHeight.size() != vinfoBlockFile[nLastBlockFile].nHeightLast + 1) && (vinfoBlockFile[nLastBlockFile].nHeightLast != 0)) {
         //The database is in a state where a block has been accepted and written to disk, but not
         //all of the block has perculated through the code. The block and the index should both be
         //intact (although assertions are added if they are not), and the block will be reprocessed
@@ -4086,9 +4090,6 @@ bool static LoadBlockIndexDB()
         CValidationState state;
         LogPrintf("%s: Attempting to re-add last block that was recorded to disk\n", __func__);
 
-        //get the last block that was properly recorded to the block info file
-        CBlockIndex* pindexLastMeta = vSortedByHeight[vinfoBlockFile[nLastBlockFile].nHeightLast + 1].second;
-
         //fix Assertion `hashPrevBlock == view.GetBestBlock()' failed. By adjusting height to the last recorded by coinsview
         CBlockIndex* pindexCoinsView = mapBlockIndex[pcoinsTip->GetBestBlock()];
 
@@ -4097,7 +4098,7 @@ bool static LoadBlockIndexDB()
         // so that the coins view and chain tip are in sync when ConnectBlock runs.
         // In a fork scenario multiple blocks may exist at the same height;
         // prefer the one whose pprev matches pindexCoinsView (same branch).
-        pindexLastMeta = NULL;
+        CBlockIndex* pindexLastMeta = NULL;
         for(unsigned int i = 0; i < vSortedByHeight.size(); i++)
         {
             if(vSortedByHeight[i].second->nHeight == pindexCoinsView->nHeight + 1) {
@@ -4117,18 +4118,18 @@ bool static LoadBlockIndexDB()
             LogPrintf("%s: Last block properly recorded: #%d %s\n", __func__, pindexLastMeta->nHeight, pindexLastMeta->GetBlockHash().ToString().c_str());
             LogPrintf("%s: Coinsview best block at height: #%d %s\n", __func__, pindexCoinsView->nHeight, pindexCoinsView->GetBlockHash().ToString().c_str());
 
-            CBlock lastMetaBlock;
-            if (!ReadBlockFromDisk(lastMetaBlock, pindexLastMeta)) {
-                isFixed = false;
-                strError = strprintf("failed to read block %d from disk", pindexLastMeta->nHeight);
-            }
-
             //set the chain to the coinsview tip so that coins DB and chain are in sync
             chainActive.SetTip(pindexCoinsView);
 
-            //Process the lastMetaBlock again, using the known location on disk
-            CDiskBlockPos blockPos = pindexLastMeta->GetBlockPos();
-            ProcessNewBlock(state, NULL, &lastMetaBlock, &blockPos);
+            CBlock lastMetaBlock;
+            if (ReadBlockFromDisk(lastMetaBlock, pindexLastMeta)) {
+                //Process the lastMetaBlock again, using the known location on disk
+                CDiskBlockPos blockPos = pindexLastMeta->GetBlockPos();
+                ProcessNewBlock(state, NULL, &lastMetaBlock, &blockPos);
+            } else {
+                isFixed = false;
+                strError = strprintf("failed to read block %d from disk", pindexLastMeta->nHeight);
+            }
         }
 
         //ensure that everything is as it should be — coins DB must match the active chain tip.

@@ -337,7 +337,8 @@ CBlockTemplate* CreateNewBlock(const CScript& scriptPubKeyIn, CWallet* pwallet, 
                 continue;
 
             CTxUndo txundo;
-            UpdateCoins(tx, state, view, txundo, nHeight);
+            if (!UpdateCoins(tx, state, view, txundo, nHeight))
+                continue;
 
             // Added
             pblock->vtx.push_back(tx);
@@ -456,10 +457,6 @@ bool ProcessBlockFound(CBlock* pblock, CWallet& wallet, CReserveKey& reservekey)
             return error("AgoutiMiner : generated block is stale");
     }
 
-    // Remove key from key pool; PoS blocks overwrite vout[0] to empty so the key is never paid
-    if (!pblock->IsProofOfStake())
-        reservekey.KeepKey();
-
     // Track how many getdata requests this block gets
     {
         LOCK(wallet.cs_wallet);
@@ -470,6 +467,10 @@ bool ProcessBlockFound(CBlock* pblock, CWallet& wallet, CReserveKey& reservekey)
     CValidationState state;
     if (!ProcessNewBlock(state, NULL, pblock))
         return error("AgoutiMiner : ProcessNewBlock, block not accepted");
+
+    // Remove key from key pool only after block is accepted; PoS blocks overwrite vout[0] to empty
+    if (!pblock->IsProofOfStake())
+        reservekey.KeepKey();
 
     for (CNode* node : vNodes) {
         node->PushInventory(CInv(MSG_BLOCK, pblock->GetHash()));

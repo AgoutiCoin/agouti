@@ -177,13 +177,17 @@ const CBlockIndex* getexplorerBlockIndex(int64_t height)
 std::string getexplorerBlockHash(int64_t Height)
 {
     std::string genesisblockhash = "0000041e482b9b9691d98eefb48473405c0b8ec31b76df3797c74a78680ef818";
-    CBlockIndex* pindexBest = mapBlockIndex[chainActive.Tip()->GetBlockHash()];
+    LOCK(cs_main);
+    CBlockIndex* tip = chainActive.Tip();
+    if (!tip)
+        return genesisblockhash;
+    CBlockIndex* pindexBest = mapBlockIndex[tip->GetBlockHash()];
     if ((Height < 0) || (Height > pindexBest->nHeight)) {
         return genesisblockhash;
     }
 
     CBlock block;
-    CBlockIndex* pblockindex = mapBlockIndex[chainActive.Tip()->GetBlockHash()];
+    CBlockIndex* pblockindex = mapBlockIndex[tip->GetBlockHash()];
     while (pblockindex->nHeight > Height)
         pblockindex = pblockindex->pprev;
     return pblockindex->GetBlockHash().GetHex(); // pblockindex->phashBlock->GetHex();
@@ -195,7 +199,8 @@ std::string BlockToString(CBlockIndex* pBlock)
         return "";
 
     CBlock block;
-    ReadBlockFromDisk(block, pBlock);
+    if (!ReadBlockFromDisk(block, pBlock))
+        return _("Failed to read block from disk");
 
     CAmount Fees = 0;
     CAmount OutVolume = 0;

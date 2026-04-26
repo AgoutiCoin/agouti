@@ -294,9 +294,12 @@ bool ProcessConsensusVote(CNode* pnode, CConsensusVote& ctx)
 {
     int n = mnodeman.GetMasternodeRank(ctx.vinMasternode, ctx.nBlockHeight, MIN_SWIFTTX_PROTO_VERSION);
 
-    CMasternode* pmn = mnodeman.Find(ctx.vinMasternode);
-    if (pmn != NULL)
-        LogPrint("swiftx", "SwiftX::ProcessConsensusVote - Masternode ADDR %s %d\n", pmn->addr.ToString().c_str(), n);
+    {
+        LOCK(mnodeman.cs);
+        CMasternode* pmn = mnodeman.Find(ctx.vinMasternode);
+        if (pmn != NULL)
+            LogPrint("swiftx", "SwiftX::ProcessConsensusVote - Masternode ADDR %s %d\n", pmn->addr.ToString().c_str(), n);
+    }
 
     if (n == -1) {
         //can be caused by past versions trying to vote with an invalid protocol
