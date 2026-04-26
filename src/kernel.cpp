@@ -438,19 +438,30 @@ bool CheckStakePointerKernelHash(
 
     uint256 stakeModifier = pindexModifier->GetBlockHash();
 
+    // Self-defending timestamp bounds — this kernel is only called for v5
+    // post-fork blocks where the 60 s future-drift rule is in effect.
+    int64_t nMTP = pindexPrev->GetMedianTimePast();
+    if ((int64_t)nTimeStake <= nMTP)
+        return error("CheckStakePointerKernelHash(): nTimeStake %u <= MTP %d",
+                     (unsigned)nTimeStake, (int)nMTP);
+    if ((int64_t)nTimeStake > (int64_t)pindexPrev->GetBlockTime() + 60)
+        return error("CheckStakePointerKernelHash(): nTimeStake %u too far ahead of prevTime %d",
+                     (unsigned)nTimeStake, (int)pindexPrev->GetBlockTime());
+
     // Build the kernel data stream — field order is consensus-critical.
     CDataStream ss(SER_GETHASH, 0);
     ss << outpoint.hash << outpoint.n << stakeModifier
        << pindexFrom->GetBlockTime() << nTimeStake;
     hashProofOfStake = Hash(ss.begin(), ss.end());
 
-    // Target: hashProofOfStake < (MASTERNODE_COLLATERAL / 100) * bnTarget
-    // Divide by 100 to match the old kernel's bnCoinDayWeight scaling and
-    // prevent uint256 overflow that would make the check trivially easy.
+    // Target test: hashProofOfStake / weight < bnTarget.
+    // Division form avoids uint256 overflow that occurs when weight * bnTarget
+    // exceeds 2^256 at low difficulty (large bnTarget), which would silently
+    // wrap and make the kernel unreachable.
     uint256 bnTarget;
     bnTarget.SetCompact(nBits);
-
-    if (hashProofOfStake >= uint256((uint64_t)(MASTERNODE_COLLATERAL / 100)) * bnTarget)
+    const uint256 bnWeight = uint256((uint64_t)(MASTERNODE_COLLATERAL / 100));
+    if (hashProofOfStake / bnWeight >= bnTarget)
         return false;
 
     if (GetBoolArg("-printcoinstake", false))

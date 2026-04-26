@@ -2317,20 +2317,30 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
         if (!pblocktree->WriteTxIndex(vPos))
             return state.Abort("Failed to write transaction index");
 
-    // add this block to the view's block chain
-    view.SetBestBlock(pindex->GetBlockHash());
-
-    // Record stake pointer usage so it cannot be reused (version-5 PoS blocks only).
-    if (block.IsProofOfStake() && block.nVersion >= 5 &&
-        pindex->nHeight >= Params().StakePointerForkHeight() &&
-        !block.stakePointer.IsNull())
-    {
+    // Enforce stake pointer uniqueness at connect time and record usage (v5 PoS only).
+    // The check precedes view.SetBestBlock so the view is not advanced on rejection.
+    uint256 spPointerHash;
+    const bool fIsV5Stake = (block.IsProofOfStake() && block.nVersion >= 5 &&
+                              pindex->nHeight >= Params().StakePointerForkHeight() &&
+                              !block.stakePointer.IsNull());
+    if (fIsV5Stake) {
         CDataStream ss(SER_GETHASH, 0);
         COutPoint op(block.stakePointer.txid, block.stakePointer.nPos);
         ss << op;
-        uint256 pointerHash = Hash(ss.begin(), ss.end());
-        mapUsedStakePointers[pointerHash] = block.GetHash();
+        spPointerHash = Hash(ss.begin(), ss.end());
+        if (mapUsedStakePointers.count(spPointerHash))
+            return state.DoS(100,
+                error("ConnectBlock(): stake pointer %s:%u already used",
+                      block.stakePointer.txid.ToString().c_str(), block.stakePointer.nPos),
+                REJECT_INVALID, "stake-pointer-reuse");
     }
+
+    // add this block to the view's block chain
+    view.SetBestBlock(pindex->GetBlockHash());
+
+    // Record stake pointer usage (v5 PoS only).
+    if (fIsV5Stake)
+        mapUsedStakePointers[spPointerHash] = block.GetHash();
 
     int64_t nTime3 = GetTimeMicros();
     nTimeIndex += nTime3 - nTime2;
@@ -3275,6 +3285,47 @@ bool CheckBlock(const CBlock& block, CValidationState& state, bool fCheckPOW, bo
 // StakePointer kernel (version-5 PoS)
 // ---------------------------------------------------------------------------
 
+// Rebuild mapUsedStakePointers from the last ValidStakePointerDuration() blocks
+// on the active chain.  Must be called (under cs_main) before ActivateBestChain
+// after every restart to prevent pointer-reuse on freshly started nodes.
+void RebuildStakePointerCache()
+{
+    AssertLockHeld(cs_main);
+    mapUsedStakePointers.clear();
+
+    const CBlockIndex* pindex = chainActive.Tip();
+    if (!pindex || pindex->nHeight < Params().StakePointerForkHeight())
+        return;
+
+    const int nWindow = Params().ValidStakePointerDuration();
+    const int nStopHeight = std::max(pindex->nHeight - nWindow,
+                                     Params().StakePointerForkHeight() - 1);
+
+    LogPrintf("RebuildStakePointerCache(): scanning heights %d..%d\n",
+              nStopHeight + 1, pindex->nHeight);
+
+    while (pindex && pindex->nHeight > nStopHeight) {
+        if (pindex->nVersion >= 5 && pindex->IsProofOfStake()) {
+            CBlock block;
+            if (ReadBlockFromDisk(block, pindex) &&
+                block.IsProofOfStake() &&
+                block.nVersion >= 5 &&
+                !block.stakePointer.IsNull())
+            {
+                CDataStream ss(SER_GETHASH, 0);
+                COutPoint op(block.stakePointer.txid, block.stakePointer.nPos);
+                ss << op;
+                uint256 h = Hash(ss.begin(), ss.end());
+                mapUsedStakePointers[h] = block.GetHash();
+            }
+        }
+        pindex = pindex->pprev;
+    }
+
+    LogPrintf("RebuildStakePointerCache(): %u entries rebuilt\n",
+              (unsigned)mapUsedStakePointers.size());
+}
+
 // Compute a canonical hash for an outpoint used as a stake pointer.
 static uint256 StakePointerHash(const COutPoint& outpoint)
 {
@@ -3323,10 +3374,8 @@ bool CheckBlockProofPointer(const CBlockIndex* pindexPrev, int nNewHeight, const
         return error("CheckBlockProofPointer(): pointer too recent (from height %d, new height %d, min offset %d)",
                      pindexFrom->nHeight, nNewHeight, Params().MaxReorganizationDepth());
 
-    // 4. Pointer must not be from a budget (superblock) payment block.
-    if (IsSporkActive(SPORK_13_ENABLE_SUPERBLOCKS) && budget.IsBudgetPaymentBlock(pindexFrom->nHeight))
-        return error("CheckBlockProofPointer(): pointer block %d is a budget payment block",
-                     pindexFrom->nHeight);
+    // 4. [Superblock carve-out removed — was gated on IsSporkActive(SPORK_13) which is
+    //    a non-deterministic runtime variable and caused consensus divergence (ISSUE 3).]
 
     // 5. Pointer must not have been used before.
     COutPoint outpointPointer(sp.txid, sp.nPos);
@@ -3360,6 +3409,17 @@ bool CheckBlockProofPointer(const CBlockIndex* pindexPrev, int nNewHeight, const
     CTxDestination dest;
     if (!ExtractDestination(blockFrom.vtx[txIdx].vout[sp.nPos].scriptPubKey, dest))
         return error("CheckBlockProofPointer(): failed to extract destination from pointer vout");
+
+    // 8a. Enforce canonical collateral form: output must be P2PKH.
+    // P2SH/multisig collateral is permanently incompatible with the v5 kernel.
+    if (!boost::get<CKeyID>(&dest))
+        return error("CheckBlockProofPointer(): collateral output is not P2PKH");
+
+    // 8b. Enforce compressed collateral pubkey.
+    // Compressed and uncompressed keys produce distinct CKeyIDs; requiring
+    // compressed removes the encoding ambiguity at consensus level.
+    if (!sp.pubKeyCollateral.IsCompressed())
+        return error("CheckBlockProofPointer(): collateral pubkey is not compressed");
 
     // 9. Address match (Option B): collateral key address must equal the output address.
     CBitcoinAddress addrCollateral(sp.pubKeyCollateral.GetID());
@@ -3565,8 +3625,9 @@ bool ContextualCheckBlock(const CBlock& block, CValidationState& state, CBlockIn
                 REJECT_INVALID, "bad-stakepointer-missing");
     }
 
-    // Height-gated PoS future drift tightening (180s -> 60s)
-    if (block.IsProofOfStake() && nHeight >= POS_FUTURE_DRIFT_V2_HEIGHT) {
+    // Height-gated PoS future drift tightening (180s -> 60s); use per-network
+    // fork height instead of the removed mainnet-only constant (ISSUE 7).
+    if (block.IsProofOfStake() && nHeight >= Params().StakePointerForkHeight()) {
         if (block.GetBlockTime() > GetAdjustedTime() + 60)
             return state.Invalid(error("%s : PoS block timestamp too far in the future at height %d", __func__, nHeight),
                 REJECT_INVALID, "time-too-new");
@@ -3742,9 +3803,15 @@ bool ProcessNewBlock(CValidationState& state, CNode* pfrom, CBlock* pblock, CDis
     if (pblock->IsProofOfStake() && setStakeSeen.count(pblock->GetProofOfStake()) && !mapBlockIndex.count(pblock->GetHash()))
         return error("ProcessNewBlock() : duplicate proof-of-stake (%s, %d) for block %s", pblock->GetProofOfStake().first.ToString().c_str(), pblock->GetProofOfStake().second, pblock->GetHash().ToString().c_str());
 
-    // NovaCoin: check proof-of-stake block signature
-    if (!pblock->CheckBlockSignature())
-        return error("ProcessNewBlock() : bad proof-of-stake block signature");
+    // NovaCoin: check proof-of-stake block signature.
+    // For v5 PoS blocks, skip the early check: the pubkey embedded in
+    // stakePointer is attacker-supplied and has not yet been authenticated.
+    // Real verification happens inside CheckStake() via AcceptBlock after
+    // CheckBlockProofPointer resolves the legitimate signing key (ISSUE 6).
+    if (!(pblock->IsProofOfStake() && pblock->nVersion >= 5)) {
+        if (!pblock->CheckBlockSignature())
+            return error("ProcessNewBlock() : bad proof-of-stake block signature");
+    }
 
     if (pblock->GetHash() != Params().HashGenesisBlock() && pfrom != NULL) {
         //if we get this far, check if the prev block is our prev block, if not then request sync and return false

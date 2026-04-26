@@ -807,6 +807,19 @@ bool AppInit2(boost::thread_group& threadGroup)
     if (mapArgs.count("-checklevel"))
         return InitError(_("Error: Unsupported argument -checklevel found. Checklevel must be level 4."));
 
+    // Enforce: -maxreorg must not exceed KernelModifierOffset.  A deeper reorg
+    // limit allows rewriting the modifier-anchor used by v5 kernel hashes,
+    // enabling kernel-grinding reorg attacks (ISSUE 5).
+    {
+        int nMaxReorg = GetArg("-maxreorg", Params().MaxReorganizationDepth());
+        if (nMaxReorg > Params().KernelModifierOffset())
+            return InitError(strprintf(
+                "Error: -maxreorg=%d exceeds KernelModifierOffset=%d. "
+                "This would compromise the v5 PoS kernel modifier guarantee. "
+                "Reduce -maxreorg or omit it.",
+                nMaxReorg, Params().KernelModifierOffset()));
+    }
+
     if (GetBoolArg("-benchmark", false))
         InitWarning(_("Warning: Unsupported argument -benchmark ignored, use -debug=bench."));
 
@@ -1525,6 +1538,15 @@ bool AppInit2(boost::thread_group& threadGroup)
 
     if (mapArgs.count("-blocknotify"))
         uiInterface.NotifyBlockTip.connect(BlockNotifyCallback);
+
+    // Rebuild the stake-pointer reuse cache before activating the best chain.
+    // Without this, a freshly restarted node has an empty mapUsedStakePointers
+    // and will accept v5 blocks that reuse a pointer already consumed within
+    // the validity window, causing a permanent consensus split (ISSUE 1).
+    {
+        LOCK(cs_main);
+        RebuildStakePointerCache();
+    }
 
     // scan for better chains in the block chain database, that are not yet connected in the active best chain
     CValidationState state;

@@ -158,9 +158,13 @@ extern std::set<std::pair<COutPoint, unsigned int> > setStakeSeen;
 
 /** Maps pointer hash → block hash that consumed it.
  *  Populated in ConnectBlock, pruned in DisconnectBlock.
- *  Guards against stake-pointer reuse within a single session.
- *  Note: cleared on restart; full protection relies on canonical chain history. */
+ *  Rebuilt from disk on startup by RebuildStakePointerCache() before
+ *  ActivateBestChain runs — mandatory for correct pointer-reuse enforcement. */
 extern std::map<uint256, uint256> mapUsedStakePointers;
+
+/** Rebuild mapUsedStakePointers from the last ValidStakePointerDuration() blocks
+ *  on the active chain.  Must be called under cs_main before ActivateBestChain. */
+void RebuildStakePointerCache();
 
 /** Best header we've seen so far (used for getheaders queries' starting points). */
 extern CBlockIndex* pindexBestHeader;
