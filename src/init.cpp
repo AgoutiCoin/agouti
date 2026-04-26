@@ -771,10 +771,12 @@ bool AppInit2(boost::thread_group& threadGroup)
     }
 
     if (mapArgs.count("-reservebalance")) {
-        if (!ParseMoney(mapArgs["-reservebalance"], nReserveBalance)) {
+        CAmount nReserveParsed = 0;
+        if (!ParseMoney(mapArgs["-reservebalance"], nReserveParsed)) {
             InitError(_("Invalid amount for -reservebalance=<amount>"));
             return false;
         }
+        nReserveBalance.store(nReserveParsed);
     }
 
     // Make sure enough file descriptors are available

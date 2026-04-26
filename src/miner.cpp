@@ -444,8 +444,10 @@ int64_t nHPSTimerStart = 0;
 CBlockTemplate* CreateNewBlockWithKey(CReserveKey& reservekey, CWallet* pwallet, bool fProofOfStake)
 {
     CPubKey pubkey;
-    if (!reservekey.GetReservedKey(pubkey))
+    if (!reservekey.GetReservedKey(pubkey)) {
+        LogPrintf("CreateNewBlockWithKey: keypool exhausted — PoS staking halted. Unlock wallet to refill keypool.\n");
         return NULL;
+    }
 
     CScript scriptPubKey = CScript() << ToByteVector(pubkey) << OP_CHECKSIG;
     return CreateNewBlock(scriptPubKey, pwallet, fProofOfStake);
@@ -543,9 +545,25 @@ void BitcoinMiner(CWallet* pwallet, bool fProofOfStake)
                 bool fPassStakeCheck = fSpForkActive || fMintableCoins.load();
                 bool fPassBalanceCheck = fSpForkActive || (nReserveBalance < pwallet->GetBalance());
                 bool fWalletLocked = !fSpForkActive && pwallet->IsLocked();
+                static int64_t nLastStakingWaitLog = 0;
                 while (nTipTime < 1471482000 || !fHasPeers || fWalletLocked ||
                        !fPassStakeCheck || !fPassBalanceCheck || !masternodeSync.IsSynced()) {
                     nLastCoinStakeSearchInterval = 0;
+                    if (GetTime() - nLastStakingWaitLog > 300) {
+                        nLastStakingWaitLog = GetTime();
+                        if (!fHasPeers)
+                            LogPrintf("BitcoinMiner: staking suspended — no peers\n");
+                        else if (!masternodeSync.IsSynced())
+                            LogPrintf("BitcoinMiner: staking suspended — awaiting masternode sync\n");
+                        else if (fWalletLocked)
+                            LogPrintf("BitcoinMiner: staking suspended — wallet locked\n");
+                        else if (!fPassStakeCheck)
+                            LogPrintf("BitcoinMiner: staking suspended — no mintable coins\n");
+                        else if (!fPassBalanceCheck)
+                            LogPrintf("BitcoinMiner: staking suspended — balance below reserve\n");
+                        else
+                            LogPrintf("BitcoinMiner: staking suspended — chain not live (tip=%lld)\n", nTipTime);
+                    }
                     MilliSleep(5000);
                     if (!fGenerateBitcoins && !fProofOfStake)
                         continue;
@@ -595,9 +613,22 @@ void BitcoinMiner(CWallet* pwallet, bool fProofOfStake)
         if (!pindexPrev)
             continue;
 
+        static int nConsecutiveStakeFails = 0;
+        static int64_t nLastStakeWarnTime = 0;
         unique_ptr<CBlockTemplate> pblocktemplate(CreateNewBlockWithKey(reservekey, pwallet, fProofOfStake));
-        if (!pblocktemplate.get())
+        if (!pblocktemplate.get()) {
+            if (fProofOfStake) {
+                nConsecutiveStakeFails++;
+                if (nConsecutiveStakeFails >= 720 && GetTime() - nLastStakeWarnTime > 600) {
+                    nLastStakeWarnTime = GetTime();
+                    LogPrintf("BitcoinMiner: WARNING — zero staking rate for ~%d attempts. "
+                              "Check coin eligibility, MN status, and keypool.\n",
+                              nConsecutiveStakeFails);
+                }
+            }
             continue;
+        }
+        nConsecutiveStakeFails = 0;
 
         CBlock* pblock = &pblocktemplate->block;
         IncrementExtraNonce(pblock, pindexPrev, nExtraNonce);

@@ -23,10 +23,11 @@
 // Responsible for activating the Masternode and pinging the network
 class CActiveMasternode
 {
-private:
+public:
     // critical section to protect the inner data structures
     mutable CCriticalSection cs;
 
+private:
     /// Ping Masternode
     bool SendMasternodePing(std::string& errorMessage);
 

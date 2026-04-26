@@ -50,12 +50,14 @@ public:
 
 class CMasternodeMan
 {
-private:
+public:
     // critical section to protect the inner data structures
     mutable CCriticalSection cs;
 
     // critical section to protect the inner data structures specifically on messaging
     mutable CCriticalSection cs_process_message;
+
+private:
 
     // map to hold all MNs
     std::vector<CMasternode> vMasternodes;
