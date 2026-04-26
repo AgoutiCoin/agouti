@@ -3554,6 +3554,11 @@ bool ContextualCheckBlockHeader(const CBlockHeader& block, CValidationState& sta
 
     //If this is a reorg, check that it is not too deep
     int nMaxReorgDepth = GetArg("-maxreorg", Params().MaxReorganizationDepth());
+    // For v5-era heights, cap effective reorg depth to KernelModifierOffset so
+    // that an operator-raised -maxreorg cannot expose the modifier ancestor to
+    // rewriting and enable kernel-grinding attacks.
+    if (nHeight >= Params().StakePointerForkHeight())
+        nMaxReorgDepth = std::min(nMaxReorgDepth, Params().KernelModifierOffset());
     if (chainActive.Height() - nHeight >= nMaxReorgDepth)
         return state.DoS(1, error("%s: forked chain older than max reorganization depth (height %d)", __func__, nHeight));
 
@@ -3579,6 +3584,7 @@ bool ContextualCheckBlockHeader(const CBlockHeader& block, CValidationState& sta
 
 bool IsBlockHashInChain(const uint256& hashBlock)
 {
+    AssertLockHeld(cs_main);
     if (hashBlock == 0 || !mapBlockIndex.count(hashBlock))
         return false;
 
@@ -3587,13 +3593,19 @@ bool IsBlockHashInChain(const uint256& hashBlock)
 
 bool IsTransactionInChain(uint256 txId, int& nHeightTx)
 {
+    AssertLockHeld(cs_main);
     uint256 hashBlock;
     CTransaction tx;
     GetTransaction(txId, tx, hashBlock, true);
     if (!IsBlockHashInChain(hashBlock))
         return false;
 
-    nHeightTx = mapBlockIndex.at(hashBlock)->nHeight;
+    // Use find() — .at() throws on a missing key; a concurrent reorg could
+    // remove the entry between the IsBlockHashInChain check above and here.
+    BlockMap::iterator it = mapBlockIndex.find(hashBlock);
+    if (it == mapBlockIndex.end())
+        return false;
+    nHeightTx = it->second->nHeight;
     return true;
 }
 
@@ -3799,31 +3811,33 @@ bool ProcessNewBlock(CValidationState& state, CNode* pfrom, CBlock* pblock, CDis
     int64_t nStartTime = GetTimeMillis();
     bool checked = CheckBlock(*pblock, state);
 
-    // Reject duplicate proof-of-stake to prevent block flood attacks
-    if (pblock->IsProofOfStake() && setStakeSeen.count(pblock->GetProofOfStake()) && !mapBlockIndex.count(pblock->GetHash()))
-        return error("ProcessNewBlock() : duplicate proof-of-stake (%s, %d) for block %s", pblock->GetProofOfStake().first.ToString().c_str(), pblock->GetProofOfStake().second, pblock->GetHash().ToString().c_str());
-
     // NovaCoin: check proof-of-stake block signature.
     // For v5 PoS blocks, skip the early check: the pubkey embedded in
     // stakePointer is attacker-supplied and has not yet been authenticated.
     // Real verification happens inside CheckStake() via AcceptBlock after
-    // CheckBlockProofPointer resolves the legitimate signing key (ISSUE 6).
+    // CheckBlockProofPointer resolves the legitimate signing key.
     if (!(pblock->IsProofOfStake() && pblock->nVersion >= 5)) {
         if (!pblock->CheckBlockSignature())
             return error("ProcessNewBlock() : bad proof-of-stake block signature");
     }
 
-    if (pblock->GetHash() != Params().HashGenesisBlock() && pfrom != NULL) {
-        //if we get this far, check if the prev block is our prev block, if not then request sync and return false
-        BlockMap::iterator mi = mapBlockIndex.find(pblock->hashPrevBlock);
-        if (mi == mapBlockIndex.end()) {
-            pfrom->PushMessage("getblocks", chainActive.GetLocator(), uint256(0));
-            return false;
-        }
-    }
-
     {
         LOCK(cs_main);   // Replaces the former TRY_LOCK loop because busy waiting wastes too much resources
+
+        // Reject duplicate proof-of-stake under cs_main to avoid a data race:
+        // setStakeSeen and mapBlockIndex are mutated under cs_main elsewhere;
+        // reading them before acquiring the lock is UB on concurrent inserts.
+        if (pblock->IsProofOfStake() && setStakeSeen.count(pblock->GetProofOfStake()) && !mapBlockIndex.count(pblock->GetHash()))
+            return error("ProcessNewBlock() : duplicate proof-of-stake (%s, %d) for block %s", pblock->GetProofOfStake().first.ToString().c_str(), pblock->GetProofOfStake().second, pblock->GetHash().ToString().c_str());
+
+        // mapBlockIndex is protected by cs_main; this lookup must be inside the lock.
+        if (pblock->GetHash() != Params().HashGenesisBlock() && pfrom != NULL) {
+            BlockMap::iterator mi = mapBlockIndex.find(pblock->hashPrevBlock);
+            if (mi == mapBlockIndex.end()) {
+                pfrom->PushMessage("getblocks", chainActive.GetLocator(), uint256(0));
+                return false;
+            }
+        }
 
         MarkBlockAsReceived (pblock->GetHash ());
         if (!checked) {
