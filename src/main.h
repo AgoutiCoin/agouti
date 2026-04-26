@@ -31,6 +31,7 @@
 #include "undo.h"
 
 #include <algorithm>
+#include <atomic>
 #include <exception>
 #include <map>
 #include <set>
@@ -150,7 +151,7 @@ extern bool fLargeWorkInvalidChainFound;
 static const int CORRECT_BLOCK_HEIGHT_FORK = 2675000;
 extern int64_t nLastCoinStakeSearchInterval;
 extern int64_t nLastCoinStakeSearchTime;
-extern int64_t nReserveBalance;
+extern std::atomic<int64_t> nReserveBalance;
 
 extern std::map<uint256, int64_t> mapRejectedBlocks;
 extern std::map<unsigned int, unsigned int> mapHashedBlocks;

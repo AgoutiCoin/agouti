@@ -456,8 +456,9 @@ bool ProcessBlockFound(CBlock* pblock, CWallet& wallet, CReserveKey& reservekey)
             return error("AgoutiMiner : generated block is stale");
     }
 
-    // Remove key from key pool
-    reservekey.KeepKey();
+    // Remove key from key pool; PoS blocks overwrite vout[0] to empty so the key is never paid
+    if (!pblock->IsProofOfStake())
+        reservekey.KeepKey();
 
     // Track how many getdata requests this block gets
     {

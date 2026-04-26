@@ -1599,6 +1599,8 @@ void CWallet::AvailableCoins(vector<COutput>& vCoins, bool fOnlyConfirmed, const
                 if (nCoinType == STAKABLE_COINS) {
                     if (pcoin->vout[i].IsZerocoinMint())
                         continue;
+                    if (fMasterNode && pcoin->vout[i].nValue == MASTERNODE_COLLATERAL)
+                        continue;
                 }
 
                 isminetype mine = IsMine(pcoin->vout[i]);
@@ -1704,7 +1706,7 @@ bool less_then_denom(const COutput& out1, const COutput& out2)
     return (!found1 && found2);
 }
 
-bool CWallet::SelectStakeCoins(std::set<std::pair<const CWalletTx*, unsigned int> >& setCoins, CAmount nTargetAmount) const
+bool CWallet::SelectStakeCoins(std::set<std::pair<uint256, unsigned int> >& setCoins, CAmount nTargetAmount) const
 {
     vector<COutput> vCoins;
     AvailableCoins(vCoins, true, NULL, false, STAKABLE_COINS);
@@ -1732,7 +1734,7 @@ bool CWallet::SelectStakeCoins(std::set<std::pair<const CWalletTx*, unsigned int
             continue;
 
         //add to our stake set
-        setCoins.insert(make_pair(out.tx, out.i));
+        setCoins.insert(make_pair(out.tx->GetHash(), (unsigned int)out.i));
         nAmountSelected += out.tx->vout[out.i].nValue;
     }
     return true;
@@ -1741,8 +1743,6 @@ bool CWallet::SelectStakeCoins(std::set<std::pair<const CWalletTx*, unsigned int
 bool CWallet::MintableCoins()
 {
     CAmount nBalance = GetBalance();
-    if (mapArgs.count("-reservebalance") && !ParseMoney(mapArgs["-reservebalance"], nReserveBalance))
-        return error("MintableCoins() : invalid reserve balance amount");
     if (nBalance <= nReserveBalance)
         return false;
 
@@ -2489,17 +2489,16 @@ bool CWallet::CreateCoinStake(const CKeyStore& keystore, unsigned int nBits, int
     scriptEmpty.clear();
     txNew.vout.push_back(CTxOut(0, scriptEmpty));
 
+    LOCK2(cs_main, cs_wallet);
+
     // Choose coins to use
     CAmount nBalance = GetBalance();
-
-    if (mapArgs.count("-reservebalance") && !ParseMoney(mapArgs["-reservebalance"], nReserveBalance))
-        return error("CreateCoinStake : invalid reserve balance amount");
 
     if (nBalance <= nReserveBalance)
         return false;
 
     // presstab HyperStake - Initialize as static and don't update the set on every run of CreateCoinStake() in order to lighten resource use
-    static std::set<pair<const CWalletTx*, unsigned int> > setStakeCoins;
+    static std::set<pair<uint256, unsigned int> > setStakeCoins;
     static int nLastStakeSetUpdate = 0;
 
     if (GetTime() - nLastStakeSetUpdate > nStakeSetUpdateTime) {
@@ -2522,7 +2521,11 @@ bool CWallet::CreateCoinStake(const CKeyStore& keystore, unsigned int nBits, int
     if (GetAdjustedTime() <= chainActive.Tip()->nTime)
         MilliSleep(10000);
 
-    BOOST_FOREACH (PAIRTYPE(const CWalletTx*, unsigned int) pcoin, setStakeCoins) {
+    BOOST_FOREACH (const PAIRTYPE(uint256, unsigned int)& stakeRef, setStakeCoins) {
+        auto itWtx = mapWallet.find(stakeRef.first);
+        if (itWtx == mapWallet.end()) continue;
+        std::pair<const CWalletTx*, unsigned int> pcoin(&itWtx->second, stakeRef.second);
+
         //make sure that enough time has elapsed between
         CBlockIndex* pindex = NULL;
         BlockMap::iterator it = mapBlockIndex.find(pcoin.first->hashBlock);
@@ -2659,17 +2662,22 @@ bool CWallet::CreateCoinStakeV5(unsigned int nBits, int64_t nSearchInterval, CMu
         return false;
     }
 
-    CMasternode* pmn = mnodeman.Find(activeMasternode.pubKeyMasternode);
-    if (!pmn) {
-        LogPrint("stakepointer", "CreateCoinStakeV5 : masternode not found in mnodeman\n");
-        return false;
+    CPubKey pubKeyCollateral;
+    CPubKey pubKeyMasternode;
+    {
+        LOCK(mnodeman.cs);
+        CMasternode* pmn = mnodeman.Find(activeMasternode.pubKeyMasternode);
+        if (!pmn) {
+            LogPrint("stakepointer", "CreateCoinStakeV5 : masternode not found in mnodeman\n");
+            return false;
+        }
+        if (!pmn->IsEnabled()) {
+            LogPrint("stakepointer", "CreateCoinStakeV5 : masternode not enabled (state=%d)\n", pmn->activeState);
+            return false;
+        }
+        pubKeyCollateral = pmn->pubKeyCollateralAddress;
+        pubKeyMasternode = pmn->pubKeyMasternode;
     }
-    if (!pmn->IsEnabled()) {
-        LogPrint("stakepointer", "CreateCoinStakeV5 : masternode not enabled (state=%d)\n", pmn->activeState);
-        return false;
-    }
-
-    CPubKey pubKeyCollateral = pmn->pubKeyCollateralAddress;
     CScript scriptCollateral = GetScriptForDestination(pubKeyCollateral.GetID());
 
     const CBlockIndex* pindexPrev = chainActive.Tip();
@@ -2764,12 +2772,15 @@ bool CWallet::CreateCoinStakeV5(unsigned int nBits, int64_t nSearchInterval, CMu
                 stakePointerOut.txid               = tx.GetHash();
                 stakePointerOut.nPos               = nPos;
                 stakePointerOut.pubKeyCollateral   = pubKeyCollateral;
-                stakePointerOut.pubKeyProofOfStake = pmn->pubKeyMasternode;
-                stakePointerOut.vchSigCollateralSignOver = activeMasternode.vchSigSignover;
+                stakePointerOut.pubKeyProofOfStake = pubKeyMasternode;
+                {
+                    LOCK(activeMasternode.cs);
+                    stakePointerOut.vchSigCollateralSignOver = activeMasternode.vchSigSignover;
+                }
 
                 LogPrintf("CreateCoinStakeV5 : found kernel at height %d txid %s nPos %u signover=%s\n",
                           nHeight, tx.GetHash().ToString(), nPos,
-                          activeMasternode.vchSigSignover.empty() ? "EMPTY" : "present");
+                          stakePointerOut.vchSigCollateralSignOver.empty() ? "EMPTY" : "present");
                 return true;
             }
         }
@@ -3628,7 +3639,7 @@ void CWallet::AutoCombineDust()
         vCoins = it->second;
 
         //find masternode rewards that need to be combined
-        CCoinControl* coinControl = new CCoinControl();
+        CCoinControl coinControl;
         CAmount nTotalRewardsValue = 0;
         BOOST_FOREACH (const COutput& out, vCoins) {
             //no coins should get this far if they dont have proper maturity, this is double checking
@@ -3639,13 +3650,13 @@ void CWallet::AutoCombineDust()
                 continue;
 
             COutPoint outpt(out.tx->GetHash(), out.i);
-            coinControl->Select(outpt);
+            coinControl.Select(outpt);
             vRewardCoins.push_back(out);
             nTotalRewardsValue += out.Value();
         }
 
         //if no inputs found then return
-        if (!coinControl->HasSelected())
+        if (!coinControl.HasSelected())
             continue;
 
         //we cannot combine one coin with itself
@@ -3664,10 +3675,12 @@ void CWallet::AutoCombineDust()
 
         //get the fee amount
         CWalletTx wtxdummy;
-        CreateTransaction(vecSend, wtxdummy, keyChange, nFeeRet, strErr, coinControl, ALL_COINS, false, CAmount(0));
+        CreateTransaction(vecSend, wtxdummy, keyChange, nFeeRet, strErr, &coinControl, ALL_COINS, false, CAmount(0));
+        if (nTotalRewardsValue < nFeeRet + 500)
+            continue;
         vecSend[0].second = nTotalRewardsValue - nFeeRet - 500;
 
-        if (!CreateTransaction(vecSend, wtx, keyChange, nFeeRet, strErr, coinControl, ALL_COINS, false, CAmount(0))) {
+        if (!CreateTransaction(vecSend, wtx, keyChange, nFeeRet, strErr, &coinControl, ALL_COINS, false, CAmount(0))) {
             LogPrintf("AutoCombineDust createtransaction failed, reason: %s\n", strErr);
             continue;
         }
@@ -3678,8 +3691,6 @@ void CWallet::AutoCombineDust()
         }
 
         LogPrintf("AutoCombineDust sent transaction\n");
-
-        delete coinControl;
     }
 }
 
@@ -3727,10 +3738,10 @@ bool CWallet::MultiSend()
         }
 
         // create new coin control, populate it with the selected utxo, create sending vector
-        CCoinControl* cControl = new CCoinControl();
+        CCoinControl cControl;
         COutPoint outpt(out.tx->GetHash(), out.i);
-        cControl->Select(outpt);
-        cControl->destChange = destMyAddress;
+        cControl.Select(outpt);
+        cControl.destChange = destMyAddress;
 
         CWalletTx wtx;
         CReserveKey keyChange(this); // this change address does not end up being used, because change is returned with coin control switch
@@ -3752,7 +3763,7 @@ bool CWallet::MultiSend()
         //get the fee amount
         CWalletTx wtxdummy;
         string strErr;
-        CreateTransaction(vecSend, wtxdummy, keyChange, nFeeRet, strErr, cControl, ALL_COINS, false, CAmount(0));
+        CreateTransaction(vecSend, wtxdummy, keyChange, nFeeRet, strErr, &cControl, ALL_COINS, false, CAmount(0));
         CAmount nLastSendAmount = vecSend[vecSend.size() - 1].second;
         if (nLastSendAmount < nFeeRet + 500) {
             LogPrintf("%s: fee of %s is too large to insert into last output\n");
@@ -3761,7 +3772,7 @@ bool CWallet::MultiSend()
         vecSend[vecSend.size() - 1].second = nLastSendAmount - nFeeRet - 500;
 
         // Create the transaction and commit it to the network
-        if (!CreateTransaction(vecSend, wtx, keyChange, nFeeRet, strErr, cControl, ALL_COINS, false, CAmount(0))) {
+        if (!CreateTransaction(vecSend, wtx, keyChange, nFeeRet, strErr, &cControl, ALL_COINS, false, CAmount(0))) {
             LogPrintf("MultiSend createtransaction failed\n");
             return false;
         }
@@ -3771,8 +3782,6 @@ bool CWallet::MultiSend()
             return false;
         } else
             fMultiSendNotify = true;
-
-        delete cControl;
 
         //write nLastMultiSendHeight to DB
         CWalletDB walletdb(strWalletFile);
