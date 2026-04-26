@@ -2684,6 +2684,14 @@ bool CWallet::CreateCoinStakeV5(unsigned int nBits, int64_t nSearchInterval, CMu
         pubKeyCollateral = pmn->pubKeyCollateralAddress;
         pubKeyMasternode = pmn->pubKeyMasternode;
     }
+    // Canonical collateral form required by CheckBlockProofPointer: compressed P2PKH.
+    // Fail early so the operator sees a clear error rather than a rejected block.
+    if (!pubKeyCollateral.IsValid() || !pubKeyCollateral.IsCompressed()) {
+        LogPrintf("CreateCoinStakeV5: MN collateral pubkey is invalid or uncompressed — "
+                  "block would be rejected. Ensure masternode was registered with a "
+                  "compressed P2PKH key.\n");
+        return false;
+    }
     CScript scriptCollateral = GetScriptForDestination(pubKeyCollateral.GetID());
 
     // Snapshot chain state under cs_main; build candidate index list; then release the lock
