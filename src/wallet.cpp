@@ -1754,7 +1754,10 @@ bool CWallet::MintableCoins()
         if (out.tx->IsZerocoinSpend()) {
             if (!out.tx->IsInMainChain())
                 continue;
-            nTxTime = mapBlockIndex.at(out.tx->hashBlock)->GetBlockTime();
+            {
+                LOCK(cs_main);
+                nTxTime = mapBlockIndex.at(out.tx->hashBlock)->GetBlockTime();
+            }
         }
 
         if (GetAdjustedTime() - nTxTime > Params().StakeMinAge())
@@ -2491,6 +2494,10 @@ bool CWallet::CreateCoinStake(const CKeyStore& keystore, unsigned int nBits, int
 
     LOCK2(cs_main, cs_wallet);
 
+    // Re-check lock state after acquiring cs_wallet to close the TOCTOU window.
+    if (IsLocked())
+        return false;
+
     // Choose coins to use
     CAmount nBalance = GetBalance();
 
@@ -2655,7 +2662,6 @@ bool CWallet::CreateCoinStakeV5(unsigned int nBits, int64_t nSearchInterval, CMu
 {
     // Version-5 coinstake: no wallet UTXO required.
     // Walk the chain for recent MN reward payments to our collateral address.
-    LOCK(cs_main);
 
     if (!fMasterNode) {
         LogPrint("stakepointer", "CreateCoinStakeV5 : not a masternode\n");
@@ -2680,27 +2686,46 @@ bool CWallet::CreateCoinStakeV5(unsigned int nBits, int64_t nSearchInterval, CMu
     }
     CScript scriptCollateral = GetScriptForDestination(pubKeyCollateral.GetID());
 
-    const CBlockIndex* pindexPrev = chainActive.Tip();
-    if (!pindexPrev) return false;
+    // Snapshot chain state under cs_main; build candidate index list; then release the lock
+    // before disk I/O so that msghand/RPC are not frozen for the entire search.
+    const CBlockIndex* pindexPrev;
+    int nNewHeight, nMinPointerHeight, nMaxPointerHeight;
+    int64_t nPrevTime;
+    std::vector<CBlockIndex*> vCandidates;
+    {
+        LOCK(cs_main);
+        pindexPrev = chainActive.Tip();
+        if (!pindexPrev) return false;
 
-    int nNewHeight        = pindexPrev->nHeight + 1;
-    int nValidityPeriod   = Params().ValidStakePointerDuration();
-    int nReorgDepth       = Params().MaxReorganizationDepth();
-    int nMinPointerHeight = nNewHeight - nValidityPeriod;
-    int nMaxPointerHeight = nNewHeight - nReorgDepth;
+        nNewHeight        = pindexPrev->nHeight + 1;
+        nPrevTime         = pindexPrev->nTime;
+        int nValidityPeriod   = Params().ValidStakePointerDuration();
+        int nReorgDepth       = Params().MaxReorganizationDepth();
+        nMinPointerHeight = nNewHeight - nValidityPeriod;
+        nMaxPointerHeight = nNewHeight - nReorgDepth;
 
-    if (nMinPointerHeight < 0) nMinPointerHeight = 0;
-    if (nMaxPointerHeight <= nMinPointerHeight) {
-        LogPrint("stakepointer", "CreateCoinStakeV5 : pointer window empty (min=%d max=%d)\n", nMinPointerHeight, nMaxPointerHeight);
-        return false;
-    }
+        if (nMinPointerHeight < 0) nMinPointerHeight = 0;
+        if (nMaxPointerHeight <= nMinPointerHeight) {
+            LogPrint("stakepointer", "CreateCoinStakeV5 : pointer window empty (min=%d max=%d)\n", nMinPointerHeight, nMaxPointerHeight);
+            return false;
+        }
 
-    LogPrint("stakepointer", "CreateCoinStakeV5 : searching for pointer in blocks [%d..%d] for height %d, collateral=%s\n",
-             nMinPointerHeight, nMaxPointerHeight, nNewHeight,
-             CBitcoinAddress(pubKeyCollateral.GetID()).ToString());
+        LogPrint("stakepointer", "CreateCoinStakeV5 : searching for pointer in blocks [%d..%d] for height %d, collateral=%s\n",
+                 nMinPointerHeight, nMaxPointerHeight, nNewHeight,
+                 CBitcoinAddress(pubKeyCollateral.GetID()).ToString());
 
-    // Prevent staking a time that won't be accepted.
-    if (GetAdjustedTime() <= pindexPrev->nTime)
+        for (int h = nMaxPointerHeight; h >= nMinPointerHeight; h--) {
+            CBlockIndex* pindexCandidate = chainActive[h];
+            if (!pindexCandidate) continue;
+            // Skip budget (superblock) payment blocks.
+            if (IsSporkActive(SPORK_13_ENABLE_SUPERBLOCKS) && budget.IsBudgetPaymentBlock(h))
+                continue;
+            vCandidates.push_back(pindexCandidate);
+        }
+    } // cs_main released here — disk reads proceed without holding it
+
+    // Prevent staking a time that won't be accepted; sleep without holding cs_main.
+    if (GetAdjustedTime() <= nPrevTime)
         MilliSleep(10000);
 
     nTxNewTime = GetAdjustedTime();
@@ -2708,14 +2733,12 @@ bool CWallet::CreateCoinStakeV5(unsigned int nBits, int64_t nSearchInterval, CMu
     // Walk blocks in the validity window looking for outputs paying our collateral address.
     int nCandidateOutputs = 0;
     int nKernelAttempts = 0;
-    for (int nHeight = nMaxPointerHeight; nHeight >= nMinPointerHeight; nHeight--) {
-        CBlockIndex* pindexCandidate = chainActive[nHeight];
-        if (!pindexCandidate) continue;
-
-        // Skip budget (superblock) payment blocks.
-        if (IsSporkActive(SPORK_13_ENABLE_SUPERBLOCKS) &&
-            budget.IsBudgetPaymentBlock(nHeight))
-            continue;
+    for (CBlockIndex* pindexCandidate : vCandidates) {
+        // Verify the candidate is still on the active chain before reading it.
+        {
+            LOCK(cs_main);
+            if (!chainActive.Contains(pindexCandidate)) continue;
+        }
 
         CBlock block;
         if (!ReadBlockFromDisk(block, pindexCandidate->GetBlockPos()))
@@ -2731,7 +2754,11 @@ bool CWallet::CreateCoinStakeV5(unsigned int nBits, int64_t nSearchInterval, CMu
 
                 nCandidateOutputs++;
                 COutPoint outpoint(tx.GetHash(), nPos);
-                if (IsStakePointerUsed(pindexPrev, outpoint)) continue;
+                {
+                    // IsStakePointerUsed reads mapUsedStakePointers — guarded by cs_main.
+                    LOCK(cs_main);
+                    if (IsStakePointerUsed(pindexPrev, outpoint)) continue;
+                }
 
                 // Try kernel hash with the current timestamp.
                 nKernelAttempts++;
@@ -2779,7 +2806,7 @@ bool CWallet::CreateCoinStakeV5(unsigned int nBits, int64_t nSearchInterval, CMu
                 }
 
                 LogPrintf("CreateCoinStakeV5 : found kernel at height %d txid %s nPos %u signover=%s\n",
-                          nHeight, tx.GetHash().ToString(), nPos,
+                          pindexCandidate->nHeight, tx.GetHash().ToString(), nPos,
                           stakePointerOut.vchSigCollateralSignOver.empty() ? "EMPTY" : "present");
                 return true;
             }

@@ -740,29 +740,32 @@ void ThreadSocketHandler()
             }
         }
         {
-            // Delete disconnected nodes
-            list<CNode*> vNodesDisconnectedCopy = vNodesDisconnected;
-            BOOST_FOREACH (CNode* pnode, vNodesDisconnectedCopy) {
-                // wait until threads are done using it
-                if (pnode->GetRefCount() <= 0) {
-                    bool fDelete = false;
-                    {
+            // Delete disconnected nodes; gather deletions under cs_vNodes, delete outside it.
+            list<CNode*> vDelete;
+            {
+                LOCK(cs_vNodes);
+                list<CNode*> vNodesDisconnectedCopy = vNodesDisconnected;
+                BOOST_FOREACH (CNode* pnode, vNodesDisconnectedCopy) {
+                    if (pnode->GetRefCount() <= 0) {
                         TRY_LOCK(pnode->cs_vSend, lockSend);
                         if (lockSend) {
                             TRY_LOCK(pnode->cs_vRecvMsg, lockRecv);
                             if (lockRecv) {
                                 TRY_LOCK(pnode->cs_inventory, lockInv);
-                                if (lockInv)
-                                    fDelete = true;
+                                if (lockInv) {
+                                    TRY_LOCK(pnode->cs_filter, lockFilter);
+                                    if (lockFilter) {
+                                        vNodesDisconnected.remove(pnode);
+                                        vDelete.push_back(pnode);
+                                    }
+                                }
                             }
                         }
                     }
-                    if (fDelete) {
-                        vNodesDisconnected.remove(pnode);
-                        delete pnode;
-                    }
                 }
             }
+            BOOST_FOREACH (CNode* pnode, vDelete)
+                delete pnode;
         }
         size_t vNodesSize;
         {

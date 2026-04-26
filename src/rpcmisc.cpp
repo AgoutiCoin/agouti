@@ -121,10 +121,16 @@ Value getinfo(const Array& params, bool fHelp)
 #endif
     obj.push_back(Pair("relayfee", ValueFromAmount(::minRelayTxFee.GetFeePerK())));
     bool nStaking = false;
-    if (mapHashedBlocks.count(chainActive.Tip()->nHeight))
-        nStaking = true;
-    else if (mapHashedBlocks.count(chainActive.Tip()->nHeight - 1) && nLastCoinStakeSearchInterval)
-        nStaking = true;
+    {
+        LOCK(cs_main);
+        const CBlockIndex* ptip = chainActive.Tip();
+        if (ptip) {
+            if (mapHashedBlocks.count(ptip->nHeight))
+                nStaking = true;
+            else if (mapHashedBlocks.count(ptip->nHeight - 1) && nLastCoinStakeSearchInterval)
+                nStaking = true;
+        }
+    }
     obj.push_back(Pair("staking status", (nStaking ? "Staking Active" : "Staking Not Active")));
     obj.push_back(Pair("errors", GetWarnings("statusbar")));
     return obj;
@@ -525,20 +531,32 @@ Value getstakingstatus(const Array& params, bool fHelp)
             HelpExampleCli("getstakingstatus", "") + HelpExampleRpc("getstakingstatus", ""));
 
     Object obj;
-    obj.push_back(Pair("validtime", chainActive.Tip()->nTime > 1471482000));
-    obj.push_back(Pair("haveconnections", !vNodes.empty()));
+    bool fHaveConnections;
+    {
+        LOCK(cs_vNodes);
+        fHaveConnections = !vNodes.empty();
+    }
+    bool fValidTime = false;
+    bool nStaking   = false;
+    {
+        LOCK(cs_main);
+        const CBlockIndex* ptip = chainActive.Tip();
+        if (ptip) {
+            fValidTime = ptip->nTime > 1471482000;
+            if (mapHashedBlocks.count(ptip->nHeight))
+                nStaking = true;
+            else if (mapHashedBlocks.count(ptip->nHeight - 1) && nLastCoinStakeSearchInterval)
+                nStaking = true;
+        }
+    }
+    obj.push_back(Pair("validtime", fValidTime));
+    obj.push_back(Pair("haveconnections", fHaveConnections));
     if (pwalletMain) {
         obj.push_back(Pair("walletunlocked", !pwalletMain->IsLocked()));
         obj.push_back(Pair("mintablecoins", pwalletMain->MintableCoins()));
         obj.push_back(Pair("enoughcoins", nReserveBalance <= pwalletMain->GetBalance()));
     }
     obj.push_back(Pair("mnsync", masternodeSync.IsSynced()));
-
-    bool nStaking = false;
-    if (mapHashedBlocks.count(chainActive.Tip()->nHeight))
-        nStaking = true;
-    else if (mapHashedBlocks.count(chainActive.Tip()->nHeight - 1) && nLastCoinStakeSearchInterval)
-        nStaking = true;
     obj.push_back(Pair("staking status", nStaking));
 
     return obj;

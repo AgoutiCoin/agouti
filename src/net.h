@@ -20,6 +20,7 @@
 #include "uint256.h"
 #include "utilstrencodings.h"
 
+#include <atomic>
 #include <deque>
 #include <stdint.h>
 
@@ -271,7 +272,7 @@ public:
     CSemaphoreGrant grantOutbound;
     CCriticalSection cs_filter;
     CBloomFilter* pfilter;
-    int nRefCount;
+    std::atomic<int> nRefCount;
     NodeId id;
 
 protected:
@@ -338,8 +339,8 @@ public:
 
     int GetRefCount()
     {
-        assert(nRefCount >= 0);
-        return nRefCount;
+        assert(nRefCount.load() >= 0);
+        return nRefCount.load();
     }
 
     // requires LOCK(cs_vRecvMsg)
@@ -364,13 +365,13 @@ public:
 
     CNode* AddRef()
     {
-        nRefCount++;
+        nRefCount.fetch_add(1, std::memory_order_relaxed);
         return this;
     }
 
     void Release()
     {
-        nRefCount--;
+        nRefCount.fetch_sub(1, std::memory_order_relaxed);
     }
 
 

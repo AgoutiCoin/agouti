@@ -112,6 +112,7 @@ CBlockTemplate* CreateNewBlock(const CScript& scriptPubKeyIn, CWallet* pwallet, 
 
     // Set version: 5 for StakePointer PoS blocks, 4 otherwise.
     {
+        LOCK(cs_main);
         CBlockIndex* pindexTip = chainActive.Tip();
         int nNewHeight = pindexTip ? pindexTip->nHeight + 1 : 0;
         if (fProofOfStake && nNewHeight >= Params().StakePointerForkHeight())
@@ -136,7 +137,12 @@ CBlockTemplate* CreateNewBlock(const CScript& scriptPubKeyIn, CWallet* pwallet, 
     if (fProofOfStake) {
         boost::this_thread::interruption_point();
         pblock->nTime = GetAdjustedTime();
-        CBlockIndex* pindexPrev = chainActive.Tip();
+        CBlockIndex* pindexPrev;
+        {
+            LOCK(cs_main);
+            pindexPrev = chainActive.Tip();
+        }
+        if (!pindexPrev) return NULL;
         pblock->nBits = GetNextWorkRequired(pindexPrev, pblock);
         CMutableTransaction txCoinStake;
         int64_t nSearchTime = pblock->nTime; // search to current time
@@ -494,61 +500,98 @@ void BitcoinMiner(CWallet* pwallet, bool fProofOfStake)
     unsigned int nExtraNonce = 0;
 
     //control the amount of times the client will check for mintable coins
-    static bool fMintableCoins = false;
-    static int nMintableLastCheck = 0;
+    static std::atomic<bool> fMintableCoins{false};
+    static std::atomic<int> nMintableLastCheck{0};
 
-    if (fProofOfStake && (GetTime() - nMintableLastCheck > 5 * 60)) // 5 minute check time
+    if (fProofOfStake && (GetTime() - nMintableLastCheck.load() > 5 * 60)) // 5 minute check time
     {
-        nMintableLastCheck = GetTime();
-        fMintableCoins = pwallet->MintableCoins();
+        nMintableLastCheck.store((int)GetTime());
+        fMintableCoins.store(pwallet->MintableCoins());
     }
 
     while (fGenerateBitcoins || fProofOfStake) {
         if (fProofOfStake) {
-            if (chainActive.Tip()->nHeight < Params().LAST_POW_BLOCK()) {
-                MilliSleep(5000);
-                continue;
+            {
+                int nTipHeight;
+                {
+                    LOCK(cs_main);
+                    CBlockIndex* ptip = chainActive.Tip();
+                    nTipHeight = ptip ? ptip->nHeight : -1;
+                }
+                if (nTipHeight < Params().LAST_POW_BLOCK()) {
+                    MilliSleep(5000);
+                    continue;
+                }
             }
 
             {
                 // Above the StakePointer fork height, masternode eligibility replaces
                 // mintable-coin eligibility.  fMintableCoins is only checked on the legacy path.
-                bool fSpForkActive = (chainActive.Tip()->nHeight + 1 >= Params().StakePointerForkHeight());
-                bool fPassStakeCheck = fSpForkActive || fMintableCoins;
+                int64_t nTipTime;
+                bool fSpForkActive;
+                {
+                    LOCK(cs_main);
+                    CBlockIndex* ptip = chainActive.Tip();
+                    fSpForkActive = ptip ? (ptip->nHeight + 1 >= Params().StakePointerForkHeight()) : false;
+                    nTipTime      = ptip ? ptip->nTime : 0;
+                }
+                bool fHasPeers;
+                {
+                    LOCK(cs_vNodes);
+                    fHasPeers = !vNodes.empty();
+                }
+                bool fPassStakeCheck = fSpForkActive || fMintableCoins.load();
                 bool fPassBalanceCheck = fSpForkActive || (nReserveBalance < pwallet->GetBalance());
-
                 bool fWalletLocked = !fSpForkActive && pwallet->IsLocked();
-                while (chainActive.Tip()->nTime < 1471482000 || vNodes.empty() || fWalletLocked ||
+                while (nTipTime < 1471482000 || !fHasPeers || fWalletLocked ||
                        !fPassStakeCheck || !fPassBalanceCheck || !masternodeSync.IsSynced()) {
                     nLastCoinStakeSearchInterval = 0;
                     MilliSleep(5000);
                     if (!fGenerateBitcoins && !fProofOfStake)
                         continue;
                     // Re-evaluate on each iteration.
-                    fSpForkActive     = (chainActive.Tip()->nHeight + 1 >= Params().StakePointerForkHeight());
-                    fPassStakeCheck   = fSpForkActive || fMintableCoins;
+                    {
+                        LOCK(cs_main);
+                        CBlockIndex* ptip = chainActive.Tip();
+                        fSpForkActive = ptip ? (ptip->nHeight + 1 >= Params().StakePointerForkHeight()) : false;
+                        nTipTime      = ptip ? ptip->nTime : 0;
+                    }
+                    {
+                        LOCK(cs_vNodes);
+                        fHasPeers = !vNodes.empty();
+                    }
+                    fPassStakeCheck   = fSpForkActive || fMintableCoins.load();
                     fPassBalanceCheck = fSpForkActive || (nReserveBalance < pwallet->GetBalance());
                     fWalletLocked     = !fSpForkActive && pwallet->IsLocked();
                 }
             }
 
-            if (mapHashedBlocks.count(chainActive.Tip()->nHeight)) //search our map of hashed blocks, see if bestblock has been hashed yet
             {
-                if (GetTime() - mapHashedBlocks[chainActive.Tip()->nHeight] < max(pwallet->nHashInterval, (unsigned int)1)) // wait half of the nHashDrift with max wait of 3 minutes
-                {
-                    MilliSleep(5000);
-                    continue;
+                // Search map of hashed blocks to see if the best block has been hashed yet.
+                LOCK(cs_main);
+                CBlockIndex* ptip = chainActive.Tip();
+                if (ptip) {
+                    auto it = mapHashedBlocks.find(ptip->nHeight);
+                    if (it != mapHashedBlocks.end() &&
+                        GetTime() - it->second < max(pwallet->nHashInterval, (unsigned int)1)) {
+                        MilliSleep(5000);
+                        continue;
+                    }
                 }
             }
         }
 
         MilliSleep(1000);
-        
+
         //
         // Create new block
         //
         unsigned int nTransactionsUpdatedLast = mempool.GetTransactionsUpdated();
-        CBlockIndex* pindexPrev = chainActive.Tip();
+        CBlockIndex* pindexPrev;
+        {
+            LOCK(cs_main);
+            pindexPrev = chainActive.Tip();
+        }
         if (!pindexPrev)
             continue;
 
@@ -657,14 +700,20 @@ void BitcoinMiner(CWallet* pwallet, bool fProofOfStake)
             // Check for stop or if block needs to be rebuilt
             boost::this_thread::interruption_point();
             // Regtest mode doesn't require peers
-            if (vNodes.empty() && Params().MiningRequiresPeers())
-                break;
+            {
+                LOCK(cs_vNodes);
+                if (vNodes.empty() && Params().MiningRequiresPeers())
+                    break;
+            }
             if (pblock->nNonce >= 0xffff0000)
                 break;
             if (mempool.GetTransactionsUpdated() != nTransactionsUpdatedLast && GetTime() - nStart > 60)
                 break;
-            if (pindexPrev != chainActive.Tip())
-                break;
+            {
+                LOCK(cs_main);
+                if (pindexPrev != chainActive.Tip())
+                    break;
+            }
 
             // Update nTime every few seconds
             UpdateTime(pblock, pindexPrev);

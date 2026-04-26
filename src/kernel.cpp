@@ -370,6 +370,7 @@ bool CheckStakeKernelHash(unsigned int nBits, const CBlock& blockFrom, const CTr
         break;
     }
 
+    AssertLockHeld(cs_main); // mapHashedBlocks and chainActive are protected by cs_main
     mapHashedBlocks.clear();
     mapHashedBlocks[chainActive.Tip()->nHeight] = GetTime(); //store a time stamp of when we last hashed on this block
     return fSuccess;
