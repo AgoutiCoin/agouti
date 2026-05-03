@@ -37,7 +37,7 @@ static const CAmount PROPOSAL_FEE_TX_V2 = (COIN / 4);  // 0.25 AGU post-fork
 
 inline CAmount GetBudgetProposalFee(int nHeight)
 {
-    return (nHeight >= CORRECT_BLOCK_HEIGHT_FORK) ? PROPOSAL_FEE_TX_V2 : PROPOSAL_FEE_TX_V1;
+    return (nHeight >= Params().StakePointerForkHeight()) ? PROPOSAL_FEE_TX_V2 : PROPOSAL_FEE_TX_V1;
 }
 static const int64_t BUDGET_VOTE_UPDATE_MIN = 60 * 60;
 
@@ -214,6 +214,24 @@ public:
 
 
 //
+// Optional trailing field helper: serialise unconditionally on write/size,
+// but on read only consume bytes if any remain. Used so that legacy budget.dat
+// files (predating mapSeenVetoVotes) load cleanly instead of failing at EOF.
+//
+template <typename Stream, typename T>
+inline void SerReadOptionalTrailing(Stream& s, const T& obj, int nType, int nVersion, CSerActionSerialize)
+{
+    ::Serialize(s, obj, nType, nVersion);
+}
+
+template <typename Stream, typename T>
+inline void SerReadOptionalTrailing(Stream& s, T& obj, int nType, int nVersion, CSerActionUnserialize)
+{
+    if (s.size() != 0)
+        ::Unserialize(s, obj, nType, nVersion);
+}
+
+//
 // Budget Manager : Contains all proposals for the budget
 //
 class CBudgetManager
@@ -328,9 +346,10 @@ public:
         READWRITE(mapProposals);
         READWRITE(mapFinalizedBudgets);
 
-        // Appended last for backwards-compatible reads: old budget.dat will cause a
-        // fresh load (IncorrectFormat), which is acceptable since veto votes resync from peers.
-        READWRITE(mapSeenVetoVotes);
+        // Appended last for backwards-compatible reads: old budget.dat predates
+        // mapSeenVetoVotes; on read, only deserialise if bytes remain so legacy
+        // caches load cleanly. On write, always serialise.
+        SerReadOptionalTrailing(s, mapSeenVetoVotes, nType, nVersion, ser_action);
     }
 };
 

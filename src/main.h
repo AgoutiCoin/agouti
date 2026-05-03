@@ -147,8 +147,6 @@ extern bool fLargeWorkForkFound;
 extern bool fLargeWorkInvalidChainFound;
 
 
-// Height at which the off-by-one in block value/payment calculation is corrected
-static const int CORRECT_BLOCK_HEIGHT_FORK = 2675000;
 extern int64_t nLastCoinStakeSearchInterval;
 extern int64_t nLastCoinStakeSearchTime;
 extern std::atomic<int64_t> nReserveBalance;

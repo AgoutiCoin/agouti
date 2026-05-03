@@ -289,7 +289,7 @@ bool stakeTargetHit(uint256 hashProofOfStake, int64_t nValueIn, uint256 bnTarget
     int64_t nEffectiveValue = nValueIn;
 
     // Cap effective stake weight above activation height
-    if (nHeight >= STAKE_WEIGHT_CAP_HEIGHT && nEffectiveValue > STAKE_WEIGHT_CAP)
+    if (nHeight >= Params().StakePointerForkHeight() && nEffectiveValue > STAKE_WEIGHT_CAP)
         nEffectiveValue = STAKE_WEIGHT_CAP;
 
     uint256 bnCoinDayWeight = uint256(nEffectiveValue) / 100;

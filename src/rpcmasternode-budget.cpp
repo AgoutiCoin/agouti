@@ -1024,22 +1024,20 @@ Value checkbudgets(const Array& params, bool fHelp)
 
 Value veto(const Array& params, bool fHelp)
 {
-    if (fHelp || params.size() != 2)
+    if (fHelp || params.size() != 1)
         throw runtime_error(
-            "veto \"proposal-hash\" \"privkey-wif\"\n"
+            "veto \"proposal-hash\"\n"
             "\nIrreversibly veto a governance proposal as the chain owner.\n"
-            "The private key must correspond to the hardcoded owner veto public key.\n"
+            "The wallet must hold the private key for the hardcoded owner veto public key.\n"
             "\nArguments:\n"
             "1. \"proposal-hash\"  (string, required) Hash of the proposal to veto\n"
-            "2. \"privkey-wif\"    (string, required) Owner private key in WIF format\n"
             "\nResult:\n"
             "\"status\"  (string) \"success\" or error description\n"
             "\nExamples:\n" +
-            HelpExampleCli("veto", "\"abc123...\" \"5Jxxx...\"") +
-            HelpExampleRpc("veto", "\"abc123...\", \"5Jxxx...\""));
+            HelpExampleCli("veto", "\"abc123...\"") +
+            HelpExampleRpc("veto", "\"abc123...\""));
 
     uint256 hashProposal = ParseHashV(params[0], "proposal hash");
-    std::string strPrivKey = params[1].get_str();
 
     if (hashProposal == 0)
         throw runtime_error("Invalid proposal hash");
@@ -1047,17 +1045,22 @@ Value veto(const Array& params, bool fHelp)
     if (budget.HasVetoVoteForProposal(hashProposal))
         throw runtime_error("Proposal is already vetoed");
 
-    CPubKey pubKey;
-    CKey key;
-    std::string errorMessage;
-    if (!obfuScationSigner.SetKey(strPrivKey, errorMessage, key, pubKey))
-        throw runtime_error("Invalid private key: " + errorMessage);
+    if (!pwalletMain)
+        throw JSONRPCError(RPC_WALLET_ERROR, "Wallet support disabled");
 
-    // Verify the supplied key matches the hardcoded owner veto key
     std::vector<unsigned char> vchExpected = ParseHex(Params().VetoKey());
     CPubKey pubKeyExpected(vchExpected.begin(), vchExpected.end());
-    if (pubKey != pubKeyExpected)
-        throw runtime_error("Private key does not match the hardcoded owner veto public key");
+    if (!pubKeyExpected.IsValid())
+        throw runtime_error("Internal error: hardcoded veto pubkey is invalid");
+
+    if (!pwalletMain->HaveKey(pubKeyExpected.GetID()))
+        throw JSONRPCError(RPC_WALLET_ERROR, "Veto private key not found in wallet");
+
+    EnsureWalletIsUnlocked();
+
+    CKey key;
+    if (!pwalletMain->GetKey(pubKeyExpected.GetID(), key))
+        throw JSONRPCError(RPC_WALLET_ERROR, "Veto private key not found in wallet");
 
     CVetoVote vote(hashProposal);
     if (!vote.Sign(key))

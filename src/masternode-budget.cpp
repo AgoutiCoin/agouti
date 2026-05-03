@@ -865,7 +865,7 @@ CAmount CBudgetManager::GetTotalBudget(int nHeight)
     nSubsidy = GetBlockValue(nHeight);
     LogPrint("masternode","CBudgetManager::GetTotalBudget(%d): GetBlockValue(%d) returned %f COINs\n", nHeight, nHeight, nSubsidy / COIN);
 
-    int nBudgetPct = (nHeight >= CORRECT_BLOCK_HEIGHT_FORK) ? 10 : 2;
+    int nBudgetPct = (nHeight >= Params().StakePointerForkHeight()) ? 10 : 2;
     totalBudget = ((nSubsidy / 100) * nBudgetPct) * GetBudgetPaymentCycleBlocks();
 
     LogPrint("masternode","CBudgetManager::GetTotalBudget(%d) returning %f COINs\n", nHeight, totalBudget / COIN);
@@ -1170,6 +1170,25 @@ void CBudgetManager::ProcessMessage(CNode* pfrom, std::string& strCommand, CData
 
         if (vote.vchSig.size() != 65) {
             LogPrint("masternode", "gveto - rejected malformed signature size %u\n", (unsigned int)vote.vchSig.size());
+            if (masternodeSync.IsSynced()) Misbehaving(pfrom->GetId(), 20);
+            return;
+        }
+
+        if (vote.nTime <= 0) {
+            LogPrint("masternode", "gveto - rejected non-positive timestamp (%lld)\n", vote.nTime);
+            if (masternodeSync.IsSynced()) Misbehaving(pfrom->GetId(), 20);
+            return;
+        }
+
+        CBudgetProposal* pproposal = FindProposal(vote.nProposalHash);
+        if (pproposal && vote.nTime < pproposal->nTime) {
+            LogPrint("masternode", "gveto - rejected timestamp before proposal time (%lld < %lld)\n", vote.nTime, pproposal->nTime);
+            if (masternodeSync.IsSynced()) Misbehaving(pfrom->GetId(), 20);
+            return;
+        }
+
+        if (vote.nTime > GetAdjustedTime() + 10 * 60) {
+            LogPrint("masternode", "gveto - rejected timestamp too far in future (%lld)\n", vote.nTime);
             if (masternodeSync.IsSynced()) Misbehaving(pfrom->GetId(), 20);
             return;
         }

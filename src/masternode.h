@@ -19,7 +19,7 @@
 
 inline int GetMasternodeMinConfirmations()
 {
-    return (chainActive.Height() >= CORRECT_BLOCK_HEIGHT_FORK) ? MASTERNODE_MIN_CONFIRMATIONS_V2 : MASTERNODE_MIN_CONFIRMATIONS_V1;
+    return (chainActive.Height() >= Params().StakePointerForkHeight()) ? MASTERNODE_MIN_CONFIRMATIONS_V2 : MASTERNODE_MIN_CONFIRMATIONS_V1;
 }
 #define MASTERNODE_MIN_MNP_SECONDS (10 * 60)
 #define MASTERNODE_MIN_MNB_SECONDS (5 * 60)

@@ -20,7 +20,6 @@ extern unsigned int getIntervalVersion(bool fTestNet);
 static const int MODIFIER_INTERVAL_RATIO = 3;
 
 // Stake weight cap: maximum effective UTXO value for stake weight calculation (50000 AGU)
-static const int STAKE_WEIGHT_CAP_HEIGHT = 2675000;
 static const int64_t STAKE_WEIGHT_CAP = 50000 * COIN;
 
 // Masternode collateral required to produce version-5 PoS blocks

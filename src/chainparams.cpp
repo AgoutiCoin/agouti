@@ -159,8 +159,7 @@ public:
 
         nPoolMaxTransactions = 3;
         strSporkKey = "044FE5EBB7501A1BDCE6AA607A1E3A1125AE02885D1B73D20C2857BD86FC5C1A3A2FEB4080B9BC5444F329EDD9EA5896176B203F4CF5F6EDCB8CE1854FBEDD75B0";
-        // Owner veto key — same keypair as strSporkKey; replace with a dedicated key if desired
-        strVetoKey = "044FE5EBB7501A1BDCE6AA607A1E3A1125AE02885D1B73D20C2857BD86FC5C1A3A2FEB4080B9BC5444F329EDD9EA5896176B203F4CF5F6EDCB8CE1854FBEDD75B0";
+        strVetoKey = "024c2bf95edada6c79360a5748876eea08d12cb57670ea43e8beec0946080f93f8";
         nVetoForkHeight = 2800000; // set to desired activation height before deployment
         strObfuscationPoolDummyAddress = "aRnzrxp5zmEuZmzUDvhHNP8BorrD7appeL";
         nStartMasternodePayments = 1536892874;
@@ -244,7 +243,7 @@ public:
 
         nPoolMaxTransactions = 2;
         strSporkKey = "04d9b522d9e5da662c8d2a3520a1c6836d3db9b765946134627a91cd2c68b346b47d347cc1e4e049508d9be3dcb37b37d1b1503484ffec1aff2f7ca39fbd6093c1";
-        strVetoKey = strSporkKey;
+        strVetoKey = "042292b1f401860eea99e1a8a103effbd7e1c013a59a1a3a0c91c9d1997a0bc6f338567278c11344802838c107055bf7c1641eaed61e879245c255a4f5be5746fc";
         nVetoForkHeight = 0; // always active on testnet
         strObfuscationPoolDummyAddress = "xp87cG8UEQgzs1Bk67Yk884C7pnQfAeo7q";
         nStartMasternodePayments = 1420837558; //Fri, 09 Jan 2015 21:05:58 GMT
