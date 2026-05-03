@@ -104,7 +104,7 @@ At the current subsidy of 0.125 AGU (height > 1,621,440) and after block 2,565,0
 | Item                        | Amount      |
 |-----------------------------|-------------|
 | Masternode collateral       | 3,000 AGU   |
-| Collateral confirmations    | 15 (coin maturity) |
+| Collateral confirmations    | 15 (blocks < 2,675,000) / 6 (blocks ≥ 2,675,000) |
 
 The collateral UTXO must remain unspent for the masternode to remain active. Spending
 it removes the node from the network immediately.
@@ -113,14 +113,17 @@ it removes the node from the network immediately.
 
 | Item                          | Amount   | Notes                                   |
 |-------------------------------|----------|-----------------------------------------|
-| Proposal submission fee       | 2 AGU    | Burnt; paid to a provably unspendable address |
-| Finalisation fee              | 2 AGU    | Burnt; paid when submitting finalised budget |
+| Proposal submission fee       | 2 AGU (blocks < 2,675,000) / 0.25 AGU (blocks ≥ 2,675,000) | Burnt; paid to a provably unspendable address |
+| Finalisation fee              | 2 AGU (blocks < 2,675,000) / 0.25 AGU (blocks ≥ 2,675,000) | Burnt; paid when submitting finalised budget |
+| Total proposal cost           | 4 AGU (blocks < 2,675,000) / 0.5 AGU (blocks ≥ 2,675,000) | Submit + finalise combined |
 | Collateral confirmations      | 6        | Required before proposal is considered valid |
 | Budget cycle length           | 4,383 blocks (~30.4 days, mainnet) | 720 blocks on testnet |
-| Monthly budget pool           | 2% of block subsidy × 4,383 blocks |                    |
+| Monthly budget pool           | 2% of block subsidy × 4,383 blocks (blocks < 2,675,000) / 10% (blocks ≥ 2,675,000) | |
 
-At 0.125 AGU/block the monthly budget is approximately:
-  `0.125 × 0.02 × 4,383 ≈ 10.96 AGU/month`
+At 0.125 AGU/block the monthly budget pool is approximately:
+
+- Pre-fork (blocks < 2,675,000): `0.125 × 0.02 × 4,383 ≈ 10.96 AGU/month`
+- Post-fork (blocks ≥ 2,675,000): `0.125 × 0.10 × 4,383 ≈ 54.79 AGU/month`
 
 ### Obfuscation (mixing) collateral
 
@@ -203,7 +206,7 @@ A masternode requires:
 ### Step 1 — Prepare the collateral
 
 On the controller wallet, send exactly **3,000 AGU** to a new address you control.
-Wait for **15 confirmations**.
+Wait for **15 confirmations** (6 confirmations from block 2,675,000).
 
 ```bash
 agouti-cli getnewaddress
@@ -352,7 +355,7 @@ Approved proposals are paid from the monthly budget pool at the superblock.
 
 - **Cycle length:** 4,383 blocks (~30.4 days) on mainnet
 - **Superblock:** the last block of each cycle; approved proposals are paid here
-- **Budget pool:** 2% of each block's subsidy accumulates over the cycle
+- **Budget pool:** 2% of each block's subsidy accumulates over the cycle (10% from block 2,675,000)
 
 ### Submitting a proposal
 
@@ -369,7 +372,7 @@ agouti-cli mnbudget prepare \
 ```
 
 This returns a `preparationTxHash`. The command creates a collateral transaction
-burning **2 AGU**. Wait for **6 confirmations** before proceeding.
+burning **2 AGU** (0.25 AGU from block 2,675,000). Wait for **6 confirmations** before proceeding.
 
 #### Step 2 — Submit the proposal
 
@@ -394,7 +397,7 @@ Once sufficient votes are gathered, finalise the budget:
 agouti-cli mnfinalbudget suggest
 ```
 
-A **2 AGU finalisation fee** is paid at this step. Wait for 6 confirmations.
+A **2 AGU finalisation fee** (0.25 AGU from block 2,675,000) is paid at this step. Wait for 6 confirmations.
 
 ### Voting on proposals
 
@@ -583,8 +586,9 @@ This ensures `GetStakePointer()` can locate eligible payment outputs.
 | Stake minimum age             | 1 hour         |
 | Coin maturity                 | 15 blocks      |
 | Budget cycle                  | 4,383 blocks   |
-| Budget proposal fee           | 2 AGU          |
-| Budget finalisation fee       | 2 AGU          |
+| Budget proposal fee           | 2 AGU (0.25 AGU from block 2,675,000) |
+| Budget finalisation fee       | 2 AGU (0.25 AGU from block 2,675,000) |
+| Governance fork height        | 2,675,000      |
 | MN/staker split               | 50 / 50        |
 | StakePointer fork height      | 2,690,000      |
 | StakePointer validity window  | 4,320 blocks   |
@@ -598,7 +602,7 @@ This ensures `GetStakePointer()` can locate eligible payment outputs.
 | RPC port                      | 6262          |
 | Last PoW block                | 200           |
 | Budget cycle                  | 720 blocks    |
-| Budget proposal fee           | 2 AGU         |
+| Budget proposal fee           | 0.25 AGU      |
 | StakePointer fork height      | 300           |
 | StakePointer validity window  | 200 blocks    |
 | Kernel modifier lookback      | 10 blocks     |

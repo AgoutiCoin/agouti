@@ -650,8 +650,9 @@ bool CMasternodeBroadcast::CheckInputsAndAdd(int& nDoS)
 
     LogPrint("masternode", "mnb - Accepted Masternode entry\n");
 
-    if (GetInputAge(vin) < MASTERNODE_MIN_CONFIRMATIONS) {
-        LogPrint("masternode","mnb - Input must have at least %d confirmations\n", MASTERNODE_MIN_CONFIRMATIONS);
+    int nMinConf = GetMasternodeMinConfirmations();
+    if (GetInputAge(vin) < nMinConf) {
+        LogPrint("masternode","mnb - Input must have at least %d confirmations\n", nMinConf);
         // maybe we miss few blocks, let this mnb to be checked again later
         mnodeman.mapSeenMasternodeBroadcast.erase(GetHash());
         masternodeSync.mapSeenSyncMNB.erase(GetHash());
@@ -659,17 +660,17 @@ bool CMasternodeBroadcast::CheckInputsAndAdd(int& nDoS)
     }
 
     // verify that sig time is legit in past
-    // should be at least not earlier than block when 10000 AGU tx got MASTERNODE_MIN_CONFIRMATIONS
+    // should be at least not earlier than block when 10000 AGU tx got the required confirmations
     uint256 hashBlock = 0;
     CTransaction tx2;
     GetTransaction(vin.prevout.hash, tx2, hashBlock, true);
     BlockMap::iterator mi = mapBlockIndex.find(hashBlock);
     if (mi != mapBlockIndex.end() && (*mi).second) {
-        CBlockIndex* pMNIndex = (*mi).second;                                                        // block for 10000 AGU tx -> 1 confirmation
-        CBlockIndex* pConfIndex = chainActive[pMNIndex->nHeight + MASTERNODE_MIN_CONFIRMATIONS - 1]; // block where tx got MASTERNODE_MIN_CONFIRMATIONS
+        CBlockIndex* pMNIndex = (*mi).second;                                          // block for 10000 AGU tx -> 1 confirmation
+        CBlockIndex* pConfIndex = chainActive[pMNIndex->nHeight + nMinConf - 1];      // block where tx got required confirmations
         if (pConfIndex->GetBlockTime() > sigTime) {
             LogPrint("masternode","mnb - Bad sigTime %d for Masternode %s (%i conf block is at %d)\n",
-                sigTime, vin.prevout.hash.ToString(), MASTERNODE_MIN_CONFIRMATIONS, pConfIndex->GetBlockTime());
+                sigTime, vin.prevout.hash.ToString(), nMinConf, pConfIndex->GetBlockTime());
             return false;
         }
     }

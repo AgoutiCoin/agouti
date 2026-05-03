@@ -31,8 +31,13 @@ class CTxBudgetPayment;
 #define VOTE_YES 1
 #define VOTE_NO 2
 
-static const CAmount PROPOSAL_FEE_TX = (2 * COIN);
-static const CAmount BUDGET_FEE_TX = (2 * COIN);
+static const CAmount PROPOSAL_FEE_TX_V1 = (2 * COIN);
+static const CAmount PROPOSAL_FEE_TX_V2 = (COIN / 4);  // 0.25 AGU post-fork
+
+inline CAmount GetBudgetProposalFee(int nHeight)
+{
+    return (nHeight >= CORRECT_BLOCK_HEIGHT_FORK) ? PROPOSAL_FEE_TX_V2 : PROPOSAL_FEE_TX_V1;
+}
 static const int64_t BUDGET_VOTE_UPDATE_MIN = 60 * 60;
 
 extern std::vector<CBudgetProposalBroadcast> vecImmatureBudgetProposals;

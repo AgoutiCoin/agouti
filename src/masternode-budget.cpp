@@ -49,6 +49,15 @@ bool IsBudgetCollateralValid(uint256 nTxCollateralHash, uint256 nExpectedHash, s
     if (txCollateral.vout.size() < 1) return false;
     if (txCollateral.nLockTime != 0) return false;
 
+    // Determine collateral block height to apply correct fork-gated fee
+    int nCollateralHeight = 0;
+    if (nBlockHash != uint256(0)) {
+        BlockMap::iterator mi = mapBlockIndex.find(nBlockHash);
+        if (mi != mapBlockIndex.end() && (*mi).second && chainActive.Contains((*mi).second))
+            nCollateralHeight = (*mi).second->nHeight;
+    }
+    CAmount nRequiredFee = GetBudgetProposalFee(nCollateralHeight);
+
     CScript findScript;
     findScript << OP_RETURN << ToByteVector(nExpectedHash);
 
@@ -59,7 +68,7 @@ bool IsBudgetCollateralValid(uint256 nTxCollateralHash, uint256 nExpectedHash, s
             LogPrint("masternode","CBudgetProposalBroadcast::IsBudgetCollateralValid - %s\n", strError);
             return false;
         }
-        if (o.scriptPubKey == findScript && o.nValue >= PROPOSAL_FEE_TX) foundOpReturn = true;
+        if (o.scriptPubKey == findScript && o.nValue >= nRequiredFee) foundOpReturn = true;
     }
     if (!foundOpReturn) {
         strError = strprintf("Couldn't find opReturn %s in %s", nExpectedHash.ToString(), txCollateral.ToString());
@@ -840,7 +849,8 @@ CAmount CBudgetManager::GetTotalBudget(int nHeight)
     nSubsidy = GetBlockValue(nHeight);
     LogPrint("masternode","CBudgetManager::GetTotalBudget(%d): GetBlockValue(%d) returned %f COINs\n", nHeight, nHeight, nSubsidy / COIN);
 
-    totalBudget = ((nSubsidy / 100) * 2) * GetBudgetPaymentCycleBlocks();
+    int nBudgetPct = (nHeight >= CORRECT_BLOCK_HEIGHT_FORK) ? 10 : 2;
+    totalBudget = ((nSubsidy / 100) * nBudgetPct) * GetBudgetPaymentCycleBlocks();
 
     LogPrint("masternode","CBudgetManager::GetTotalBudget(%d) returning %f COINs\n", nHeight, totalBudget / COIN);
     return totalBudget;
