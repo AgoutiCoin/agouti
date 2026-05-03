@@ -45,6 +45,11 @@ Value CallRPC(string args)
     }
 }
 
+static bool HasInvalidPrivateKeyMessage(const runtime_error& e)
+{
+    return string(e.what()).find("Invalid private key") != string::npos;
+}
+
 
 BOOST_AUTO_TEST_SUITE(rpc_tests)
 
@@ -106,6 +111,14 @@ BOOST_AUTO_TEST_CASE(rpc_rawsign)
     BOOST_CHECK(find_value(r.get_obj(), "complete").get_bool() == false);
     r = CallRPC(string("signrawtransaction ")+notsigned+" "+prevout+" "+"["+privkey1+","+privkey2+"]");
     BOOST_CHECK(find_value(r.get_obj(), "complete").get_bool() == true);
+}
+
+BOOST_AUTO_TEST_CASE(rpc_veto_allows_preproposal_hashes)
+{
+    BOOST_CHECK_EXCEPTION(
+        CallRPC("veto 0000000000000000000000000000000000000000000000000000000000000001 not-a-wif"),
+        runtime_error,
+        HasInvalidPrivateKeyMessage);
 }
 
 BOOST_AUTO_TEST_CASE(rpc_format_monetary_values)

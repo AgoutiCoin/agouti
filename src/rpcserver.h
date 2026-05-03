@@ -280,6 +280,7 @@ extern json_spirit::Value getbudgetinfo(const json_spirit::Array& params, bool f
 extern json_spirit::Value mnbudgetrawvote(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value mnfinalbudget(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value checkbudgets(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value veto(const json_spirit::Array& params, bool fHelp);
 
 extern json_spirit::Value getinfo(const json_spirit::Array& params, bool fHelp); // in rpcmisc.cpp
 extern json_spirit::Value mnsync(const json_spirit::Array& params, bool fHelp);

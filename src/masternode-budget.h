@@ -30,6 +30,7 @@ class CTxBudgetPayment;
 #define VOTE_ABSTAIN 0
 #define VOTE_YES 1
 #define VOTE_NO 2
+#define VOTE_VETO 3
 
 static const CAmount PROPOSAL_FEE_TX_V1 = (2 * COIN);
 static const CAmount PROPOSAL_FEE_TX_V2 = (COIN / 4);  // 0.25 AGU post-fork
@@ -39,6 +40,46 @@ inline CAmount GetBudgetProposalFee(int nHeight)
     return (nHeight >= CORRECT_BLOCK_HEIGHT_FORK) ? PROPOSAL_FEE_TX_V2 : PROPOSAL_FEE_TX_V1;
 }
 static const int64_t BUDGET_VOTE_UPDATE_MIN = 60 * 60;
+
+//
+// CVetoVote - Owner-only veto for governance proposals. Irreversible once broadcast.
+//
+
+class CVetoVote
+{
+public:
+    bool fValid;
+    bool fSynced;
+    uint256 nProposalHash;
+    int64_t nTime;
+    std::vector<unsigned char> vchSig;
+
+    CVetoVote();
+    CVetoVote(uint256 nProposalHashIn);
+
+    std::string GetSignatureMessage() const;
+    bool Sign(CKey& keyOwner);
+    bool IsSignatureValid();
+    void Relay();
+
+    uint256 GetHash()
+    {
+        CHashWriter ss(SER_GETHASH, PROTOCOL_VERSION);
+        ss << nProposalHash;
+        ss << nTime;
+        return ss.GetHash();
+    }
+
+    ADD_SERIALIZE_METHODS;
+
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream& s, Operation ser_action, int nType, int nVersion)
+    {
+        READWRITE(nProposalHash);
+        READWRITE(nTime);
+        READWRITE(vchSig);
+    }
+};
 
 extern std::vector<CBudgetProposalBroadcast> vecImmatureBudgetProposals;
 extern std::vector<CFinalizedBudgetBroadcast> vecImmatureFinalizedBudgets;
@@ -182,6 +223,10 @@ private:
     // XX42    map<uint256, CTransaction> mapCollateral;
     map<uint256, uint256> mapCollateralTxids;
 
+    bool HasVetoVoteForProposalNoLock(const uint256& nProposalHash) const;
+    bool IsVetoedNoLock(const uint256& nProposalHash, int nHeight) const;
+    bool FinalizedBudgetPaymentVetoedNoLock(CFinalizedBudget& finalizedBudget, int nBlockHeight) const;
+
 public:
     // critical section to protect the inner data structures
     mutable CCriticalSection cs;
@@ -196,6 +241,7 @@ public:
     std::map<uint256, CFinalizedBudgetBroadcast> mapSeenFinalizedBudgets;
     std::map<uint256, CFinalizedBudgetVote> mapSeenFinalizedBudgetVotes;
     std::map<uint256, CFinalizedBudgetVote> mapOrphanFinalizedBudgetVotes;
+    std::map<uint256, CVetoVote> mapSeenVetoVotes;
 
     CBudgetManager()
     {
@@ -209,6 +255,7 @@ public:
         mapSeenMasternodeBudgetVotes.clear();
         mapSeenFinalizedBudgets.clear();
         mapSeenFinalizedBudgetVotes.clear();
+        // Note: veto votes are NOT cleared on re-sync — they are permanent governance state
     }
 
     int sizeFinalized() { return (int)mapFinalizedBudgets.size(); }
@@ -237,6 +284,10 @@ public:
 
     bool UpdateProposal(CBudgetVote& vote, CNode* pfrom, std::string& strError);
     bool UpdateFinalizedBudget(CFinalizedBudgetVote& vote, CNode* pfrom, std::string& strError);
+    bool AddVetoVote(CVetoVote& vote, std::string& strError);
+    bool HasVetoVoteForProposal(const uint256& nProposalHash);
+    bool IsVetoed(const uint256& nProposalHash);
+    bool IsVetoed(const uint256& nProposalHash, int nHeight);
     bool PropExists(uint256 nHash);
     bool IsTransactionValid(const CTransaction& txNew, int nBlockHeight);
     std::string GetRequiredPaymentsString(int nBlockHeight);
@@ -256,6 +307,7 @@ public:
         mapSeenFinalizedBudgetVotes.clear();
         mapOrphanMasternodeBudgetVotes.clear();
         mapOrphanFinalizedBudgetVotes.clear();
+        mapSeenVetoVotes.clear();
     }
     void CheckAndRemove();
     std::string ToString() const;
@@ -275,6 +327,10 @@ public:
 
         READWRITE(mapProposals);
         READWRITE(mapFinalizedBudgets);
+
+        // Appended last for backwards-compatible reads: old budget.dat will cause a
+        // fresh load (IncorrectFormat), which is acceptable since veto votes resync from peers.
+        READWRITE(mapSeenVetoVotes);
     }
 };
 

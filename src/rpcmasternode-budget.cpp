@@ -45,6 +45,7 @@ void budgetToJSON(CBudgetProposal* pbudgetProposal, Object& bObj)
     bObj.push_back(Pair("IsValid", pbudgetProposal->IsValid(strError)));
     bObj.push_back(Pair("IsValidReason", strError.c_str()));
     bObj.push_back(Pair("fValid", pbudgetProposal->fValid));
+    bObj.push_back(Pair("IsVetoed", budget.IsVetoed(pbudgetProposal->GetHash())));
 }
 
 // This command is retained for backwards compatibility, but is depreciated.
@@ -1019,4 +1020,58 @@ Value checkbudgets(const Array& params, bool fHelp)
     budget.CheckAndRemove();
 
     return Value::null;
+}
+
+Value veto(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 2)
+        throw runtime_error(
+            "veto \"proposal-hash\" \"privkey-wif\"\n"
+            "\nIrreversibly veto a governance proposal as the chain owner.\n"
+            "The private key must correspond to the hardcoded owner veto public key.\n"
+            "\nArguments:\n"
+            "1. \"proposal-hash\"  (string, required) Hash of the proposal to veto\n"
+            "2. \"privkey-wif\"    (string, required) Owner private key in WIF format\n"
+            "\nResult:\n"
+            "\"status\"  (string) \"success\" or error description\n"
+            "\nExamples:\n" +
+            HelpExampleCli("veto", "\"abc123...\" \"5Jxxx...\"") +
+            HelpExampleRpc("veto", "\"abc123...\", \"5Jxxx...\""));
+
+    uint256 hashProposal = ParseHashV(params[0], "proposal hash");
+    std::string strPrivKey = params[1].get_str();
+
+    if (hashProposal == 0)
+        throw runtime_error("Invalid proposal hash");
+
+    if (budget.HasVetoVoteForProposal(hashProposal))
+        throw runtime_error("Proposal is already vetoed");
+
+    CPubKey pubKey;
+    CKey key;
+    std::string errorMessage;
+    if (!obfuScationSigner.SetKey(strPrivKey, errorMessage, key, pubKey))
+        throw runtime_error("Invalid private key: " + errorMessage);
+
+    // Verify the supplied key matches the hardcoded owner veto key
+    std::vector<unsigned char> vchExpected = ParseHex(Params().VetoKey());
+    CPubKey pubKeyExpected(vchExpected.begin(), vchExpected.end());
+    if (pubKey != pubKeyExpected)
+        throw runtime_error("Private key does not match the hardcoded owner veto public key");
+
+    CVetoVote vote(hashProposal);
+    if (!vote.Sign(key))
+        throw runtime_error("Failed to sign veto vote");
+
+    if (!vote.IsSignatureValid())
+        throw runtime_error("Veto vote signature verification failed");
+
+    std::string strError = "";
+    if (!budget.AddVetoVote(vote, strError))
+        throw runtime_error("Failed to record veto: " + strError);
+
+    vote.Relay();
+
+    LogPrintf("veto RPC - veto broadcast for proposal %s\n", hashProposal.ToString());
+    return std::string("success");
 }

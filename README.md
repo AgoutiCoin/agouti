@@ -19,9 +19,10 @@ Agouti is a fork of [PIVX](https://github.com/PIVX-Project/PIVX) that forked
 5. [Running a Full Node](#5-running-a-full-node)
 6. [Masternode Setup Guide](#6-masternode-setup-guide)
 7. [Governance and Budget System](#7-governance-and-budget-system)
-8. [StakePointer Guide](#8-stakepointer-guide)
-9. [Wallet Synchronisation Notes](#9-wallet-synchronisation-notes)
-10. [Network Parameters Reference](#10-network-parameters-reference)
+8. [Owner Veto Mechanism](#8-owner-veto-mechanism)
+9. [StakePointer Guide](#9-stakepointer-guide)
+10. [Wallet Synchronisation Notes](#10-wallet-synchronisation-notes)
+11. [Network Parameters Reference](#11-network-parameters-reference)
 
 ---
 
@@ -414,6 +415,9 @@ agouti-cli mnbudget vote-alias <proposalHash> yes <alias>
 A proposal passes when `yes_votes - no_votes > total_masternodes / 10` (10% net
 majority of the eligible masternode count).
 
+The chain owner can veto any proposal unconditionally — see
+[Owner Veto Mechanism](#8-owner-veto-mechanism).
+
 ### Checking proposal status
 
 ```bash
@@ -429,7 +433,107 @@ transaction. No manual action is required.
 
 ---
 
-## 8. StakePointer Guide
+## 8. Owner Veto Mechanism
+
+The chain owner can unilaterally and irreversibly veto any governance proposal.
+A veto overrides all masternode votes. Vetoed proposals are never paid and are
+excluded from every finalized budget, regardless of the masternode vote outcome.
+
+### Activation
+
+The veto mechanism activates at block **2,800,000** on mainnet. On testnet it is
+active from genesis. The hardcoded owner public key is embedded in `chainparams.cpp`
+(`strVetoKey`). It cannot be changed at runtime.
+
+### How it works
+
+1. The owner signs a `CVetoVote` message with the private key corresponding to
+   `strVetoKey`.
+2. The signed veto is broadcast to the network via the `"gveto"` P2P message.
+3. Every node that receives a valid veto records it permanently in `budget.dat`
+   and in its in-memory `mapSeenVetoVotes`.
+4. The vetoed proposal is immediately marked `fValid = false` and excluded from:
+   - `GetBudget()` (proposal selection)
+   - `CBudgetProposal::IsValid()`
+   - `CFinalizedBudget::IsValid()` (any finalized budget containing the proposal
+     is also invalidated)
+5. Veto votes are included in the normal governance sync (`Sync()`) so newly
+   connected nodes receive them automatically.
+
+**A veto is irreversible.** There is no mechanism to lift a veto once it has
+been recorded.
+
+### Issuing a veto (RPC)
+
+```bash
+agouti-cli veto "<proposal-hash>" "<owner-private-key-WIF>"
+```
+
+| Argument             | Description                                              |
+|----------------------|----------------------------------------------------------|
+| `proposal-hash`      | Hash returned by `mnbudget show` or `getbudgetinfo`      |
+| `owner-private-key-WIF` | WIF-encoded private key matching the hardcoded veto pubkey |
+
+The RPC validates that the supplied key corresponds exactly to the hardcoded
+owner pubkey before signing. An incorrect key is rejected with an error.
+
+Example:
+
+```bash
+agouti-cli veto \
+  "a3f8c1b2d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1" \
+  "5Kxxx..."
+```
+
+On success the RPC returns `"success"` and the veto vote is relayed to all peers.
+
+### Checking veto status
+
+`getbudgetinfo` includes an `IsVetoed` field for every proposal:
+
+```bash
+agouti-cli getbudgetinfo
+# or for a specific proposal:
+agouti-cli getbudgetinfo "<proposal-name>"
+```
+
+```json
+{
+  "Name": "my-proposal",
+  ...
+  "IsVetoed": true
+}
+```
+
+### Security model
+
+- The veto key is hardcoded at compile time in `chainparams.cpp`. It is
+  identical for all nodes; there is no runtime override.
+- Veto vote signatures are verified against `strVetoKey` by every peer before
+  the vote is accepted or relayed. Invalid signatures are rejected and the
+  sending peer receives a misbehaviour mark.
+- The signed message includes the network identifier (`main` / `test`) to
+  prevent replay across networks.
+- Veto state is persisted in `budget.dat` and rebuilt from the P2P network on
+  clean nodes, so it survives restarts and resyncs deterministically.
+
+### For operators: key management
+
+The veto private key should be kept in cold storage and used only when issuing
+a veto. It is **not** a masternode key and does not need to be on any server.
+
+To derive the public key from a private key for verification:
+
+```bash
+agouti-cli validateaddress $(agouti-cli dumpprivkey <address>)
+```
+
+or use any standard secp256k1 tool to extract the uncompressed public key and
+compare it against `strVetoKey` in `chainparams.cpp`.
+
+---
+
+## 9. StakePointer Guide
 
 ### What is StakePointer? (simple explanation)
 
@@ -536,7 +640,7 @@ The `stakePointer` field is only serialised when `nVersion >= 5`.
 
 ---
 
-## 9. Wallet Synchronisation Notes
+## 10. Wallet Synchronisation Notes
 
 ### Pre-fork blocks (nVersion ≤ 4)
 
@@ -571,7 +675,7 @@ This ensures `GetStakePointer()` can locate eligible payment outputs.
 
 ---
 
-## 10. Network Parameters Reference
+## 11. Network Parameters Reference
 
 ### Mainnet
 
@@ -590,6 +694,7 @@ This ensures `GetStakePointer()` can locate eligible payment outputs.
 | Budget finalisation fee       | 2 AGU (0.25 AGU from block 2,675,000) |
 | Governance fork height        | 2,675,000      |
 | MN/staker split               | 50 / 50        |
+| Owner veto fork height        | 2,800,000      |
 | StakePointer fork height      | 2,690,000      |
 | StakePointer validity window  | 4,320 blocks   |
 | Kernel modifier lookback      | 100 blocks     |
@@ -603,6 +708,7 @@ This ensures `GetStakePointer()` can locate eligible payment outputs.
 | Last PoW block                | 200           |
 | Budget cycle                  | 720 blocks    |
 | Budget proposal fee           | 0.25 AGU      |
+| Owner veto fork height        | 0 (always active) |
 | StakePointer fork height      | 300           |
 | StakePointer validity window  | 200 blocks    |
 | Kernel modifier lookback      | 10 blocks     |

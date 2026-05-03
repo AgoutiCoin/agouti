@@ -343,6 +343,7 @@ static const CRPCCommand vRPCCommands[] =
         {"agouti", "mnbudgetrawvote", &mnbudgetrawvote, true, true, false},
         {"agouti", "mnfinalbudget", &mnfinalbudget, true, true, false},
         {"agouti", "checkbudgets", &checkbudgets, true, true, false},
+        {"agouti", "veto", &veto, true, true, false},
         {"agouti", "mnsync", &mnsync, true, true, false},
         {"agouti", "spork", &spork, true, true, false},
         {"agouti", "getpoolinfo", &getpoolinfo, true, true, false},

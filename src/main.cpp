@@ -4704,6 +4704,8 @@ bool static AlreadyHave(const CInv& inv)
         return mnodeman.mapSeenMasternodePing.count(inv.hash);
     case MSG_MASTERNODE_IP_UPDATE:
         return mnodeman.mapSeenMasternodeIPUpdate.count(inv.hash);
+    case MSG_VETO_VOTE:
+        return budget.mapSeenVetoVotes.count(inv.hash);
     }
     // Don't know what it is, just say we already got one
     return true;
@@ -4879,6 +4881,16 @@ void static ProcessGetData(CNode* pfrom)
                         ss.reserve(1000);
                         ss << budget.mapSeenFinalizedBudgets[inv.hash];
                         pfrom->PushMessage("fbs", ss);
+                        pushed = true;
+                    }
+                }
+
+                if (!pushed && inv.type == MSG_VETO_VOTE) {
+                    if (budget.mapSeenVetoVotes.count(inv.hash)) {
+                        CDataStream ss(SER_NETWORK, PROTOCOL_VERSION);
+                        ss.reserve(1000);
+                        ss << budget.mapSeenVetoVotes[inv.hash];
+                        pfrom->PushMessage("gveto", ss);
                         pushed = true;
                     }
                 }
@@ -5790,6 +5802,8 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
 //       it was the one which was commented out
 int ActiveProtocol()
 {
+    if (chainActive.Tip() && chainActive.Height() >= Params().VetoForkHeight())
+        return MIN_PEER_PROTO_VERSION_VETO_FORK;
 
     // SPORK_14 was used for 70910. Leave it 'ON' so they don't see > 70910 nodes. They won't react to SPORK_15
     // messages because it's not in their code

@@ -12,7 +12,7 @@
  * network protocol versioning
  */
 
-static const int PROTOCOL_VERSION = 70052;
+static const int PROTOCOL_VERSION = 70053;
 
 //! minimum protocol version that supports the "mnipupdate" message
 static const int MIN_MNIP_UPDATE_PROTO_VERSION = 70052;
@@ -26,6 +26,7 @@ static const int GETHEADERS_VERSION = 70000;
 //! disconnect from peers older than this proto version
 static const int MIN_PEER_PROTO_VERSION_BEFORE_ENFORCEMENT = 70049;
 static const int MIN_PEER_PROTO_VERSION_AFTER_ENFORCEMENT = 70050;
+static const int MIN_PEER_PROTO_VERSION_VETO_FORK = 70053;
 
 //! nTime field added to CAddress, starting with this version;
 //! if possible, avoid requesting addresses nodes older than this

@@ -504,6 +504,7 @@ void CBudgetManager::FillBlockPayee(CMutableTransaction& txNew, CAmount nFees, b
 
     CBlockIndex* pindexPrev = chainActive.Tip();
     if (!pindexPrev) return;
+    int nBlockHeight = pindexPrev->nHeight + 1;
 
     int nHighestCount = 0;
     CScript payee;
@@ -515,9 +516,11 @@ void CBudgetManager::FillBlockPayee(CMutableTransaction& txNew, CAmount nFees, b
     while (it != mapFinalizedBudgets.end()) {
         CFinalizedBudget* pfinalizedBudget = &((*it).second);
         if (pfinalizedBudget->GetVoteCount() > nHighestCount &&
-            pindexPrev->nHeight + 1 >= pfinalizedBudget->GetBlockStart() &&
-            pindexPrev->nHeight + 1 <= pfinalizedBudget->GetBlockEnd() &&
-            pfinalizedBudget->GetPayeeAndAmount(pindexPrev->nHeight + 1, payee, nAmount)) {
+            pfinalizedBudget->fValid &&
+            nBlockHeight >= pfinalizedBudget->GetBlockStart() &&
+            nBlockHeight <= pfinalizedBudget->GetBlockEnd() &&
+            !FinalizedBudgetPaymentVetoedNoLock(*pfinalizedBudget, nBlockHeight) &&
+            pfinalizedBudget->GetPayeeAndAmount(nBlockHeight, payee, nAmount)) {
             nHighestCount = pfinalizedBudget->GetVoteCount();
         }
 
@@ -602,6 +605,8 @@ CBudgetProposal* CBudgetManager::FindProposal(uint256 nHash)
 
 bool CBudgetManager::IsBudgetPaymentBlock(int nBlockHeight)
 {
+    LOCK(cs);
+
     int nHighestCount = -1;
     int nFivePercent = mnodeman.CountEnabled(ActiveProtocol()) / 20;
 
@@ -609,8 +614,10 @@ bool CBudgetManager::IsBudgetPaymentBlock(int nBlockHeight)
     while (it != mapFinalizedBudgets.end()) {
         CFinalizedBudget* pfinalizedBudget = &((*it).second);
         if (pfinalizedBudget->GetVoteCount() > nHighestCount &&
+            pfinalizedBudget->fValid &&
             nBlockHeight >= pfinalizedBudget->GetBlockStart() &&
-            nBlockHeight <= pfinalizedBudget->GetBlockEnd()) {
+            nBlockHeight <= pfinalizedBudget->GetBlockEnd() &&
+            !FinalizedBudgetPaymentVetoedNoLock(*pfinalizedBudget, nBlockHeight)) {
             nHighestCount = pfinalizedBudget->GetVoteCount();
         }
 
@@ -640,8 +647,10 @@ bool CBudgetManager::IsTransactionValid(const CTransaction& txNew, int nBlockHei
     while (it != mapFinalizedBudgets.end()) {
         CFinalizedBudget* pfinalizedBudget = &((*it).second);
         if (pfinalizedBudget->GetVoteCount() > nHighestCount &&
+            pfinalizedBudget->fValid &&
             nBlockHeight >= pfinalizedBudget->GetBlockStart() &&
-            nBlockHeight <= pfinalizedBudget->GetBlockEnd()) {
+            nBlockHeight <= pfinalizedBudget->GetBlockEnd() &&
+            !FinalizedBudgetPaymentVetoedNoLock(*pfinalizedBudget, nBlockHeight)) {
             nHighestCount = pfinalizedBudget->GetVoteCount();
         }
 
@@ -661,8 +670,11 @@ bool CBudgetManager::IsTransactionValid(const CTransaction& txNew, int nBlockHei
     while (it != mapFinalizedBudgets.end()) {
         CFinalizedBudget* pfinalizedBudget = &((*it).second);
 
-        if (pfinalizedBudget->GetVoteCount() > nHighestCount - mnodeman.CountEnabled(ActiveProtocol()) / 10) {
+        if (pfinalizedBudget->GetVoteCount() > nHighestCount - mnodeman.CountEnabled(ActiveProtocol()) / 10 &&
+            pfinalizedBudget->fValid) {
             if (nBlockHeight >= pfinalizedBudget->GetBlockStart() && nBlockHeight <= pfinalizedBudget->GetBlockEnd()) {
+                if (FinalizedBudgetPaymentVetoedNoLock(*pfinalizedBudget, nBlockHeight))
+                    continue;
                 if (pfinalizedBudget->IsTransactionValid(txNew, nBlockHeight)) {
                     return true;
                 }
@@ -744,7 +756,8 @@ std::vector<CBudgetProposal*> CBudgetManager::GetBudget()
 
         LogPrint("masternode","CBudgetManager::GetBudget() - Processing Budget %s\n", pbudgetProposal->strProposalName.c_str());
         //prop start/end should be inside this period
-        if (pbudgetProposal->fValid && pbudgetProposal->nBlockStart <= nBlockStart &&
+        if (pbudgetProposal->fValid && !IsVetoedNoLock(pbudgetProposal->GetHash(), nBlockStart) &&
+            pbudgetProposal->nBlockStart <= nBlockStart &&
             pbudgetProposal->nBlockEnd >= nBlockEnd &&
             pbudgetProposal->GetYeas() - pbudgetProposal->GetNays() > mnodeman.CountEnabled(ActiveProtocol()) / 10 &&
             pbudgetProposal->IsEstablished()) {
@@ -820,7 +833,10 @@ std::string CBudgetManager::GetRequiredPaymentsString(int nBlockHeight)
     std::map<uint256, CFinalizedBudget>::iterator it = mapFinalizedBudgets.begin();
     while (it != mapFinalizedBudgets.end()) {
         CFinalizedBudget* pfinalizedBudget = &((*it).second);
-        if (nBlockHeight >= pfinalizedBudget->GetBlockStart() && nBlockHeight <= pfinalizedBudget->GetBlockEnd()) {
+        if (pfinalizedBudget->fValid &&
+            nBlockHeight >= pfinalizedBudget->GetBlockStart() &&
+            nBlockHeight <= pfinalizedBudget->GetBlockEnd() &&
+            !FinalizedBudgetPaymentVetoedNoLock(*pfinalizedBudget, nBlockHeight)) {
             CTxBudgetPayment payment;
             if (pfinalizedBudget->GetBudgetPaymentByBlock(nBlockHeight, payment)) {
                 if (ret == "unknown-budget") {
@@ -1140,6 +1156,42 @@ void CBudgetManager::ProcessMessage(CNode* pfrom, std::string& strCommand, CData
             LogPrint("masternode","fbvote - rejected finalized budget vote - %s - %s\n", vote.GetHash().ToString(), strError);
         }
     }
+
+    if (strCommand == "gveto") { //Owner governance veto
+        CVetoVote vote;
+        vRecv >> vote;
+        vote.fValid = true;
+
+        if (vote.nProposalHash == 0) {
+            LogPrint("masternode", "gveto - rejected null proposal hash\n");
+            if (masternodeSync.IsSynced()) Misbehaving(pfrom->GetId(), 20);
+            return;
+        }
+
+        if (vote.vchSig.size() != 65) {
+            LogPrint("masternode", "gveto - rejected malformed signature size %u\n", (unsigned int)vote.vchSig.size());
+            if (masternodeSync.IsSynced()) Misbehaving(pfrom->GetId(), 20);
+            return;
+        }
+
+        if (mapSeenVetoVotes.count(vote.GetHash()) || HasVetoVoteForProposal(vote.nProposalHash)) {
+            return;
+        }
+
+        if (!vote.IsSignatureValid()) {
+            LogPrint("masternode", "gveto - invalid owner signature\n");
+            if (masternodeSync.IsSynced()) Misbehaving(pfrom->GetId(), 20);
+            return;
+        }
+
+        std::string strError = "";
+        if (AddVetoVote(vote, strError)) {
+            vote.Relay();
+            LogPrint("masternode", "gveto - veto recorded for proposal %s\n", vote.nProposalHash.ToString());
+        } else {
+            LogPrint("masternode", "gveto - rejected: %s\n", strError);
+        }
+    }
 }
 
 bool CBudgetManager::PropExists(uint256 nHash)
@@ -1181,6 +1233,12 @@ void CBudgetManager::ResetSync()
         }
         ++it3;
     }
+
+    std::map<uint256, CVetoVote>::iterator it5 = mapSeenVetoVotes.begin();
+    while (it5 != mapSeenVetoVotes.end()) {
+        it5->second.fSynced = false;
+        ++it5;
+    }
 }
 
 void CBudgetManager::MarkSynced()
@@ -1219,6 +1277,13 @@ void CBudgetManager::MarkSynced()
             }
         }
         ++it3;
+    }
+
+    std::map<uint256, CVetoVote>::iterator it5 = mapSeenVetoVotes.begin();
+    while (it5 != mapSeenVetoVotes.end()) {
+        if (it5->second.fValid)
+            it5->second.fSynced = true;
+        ++it5;
     }
 }
 
@@ -1288,6 +1353,17 @@ void CBudgetManager::Sync(CNode* pfrom, uint256 nProp, bool fPartial)
 
     pfrom->PushMessage("ssc", MASTERNODE_SYNC_BUDGET_FIN, nInvCount);
     LogPrint("mnbudget", "CBudgetManager::Sync - sent %d items\n", nInvCount);
+
+    // Sync veto votes — these are permanent governance state, always propagated
+    std::map<uint256, CVetoVote>::iterator it5 = mapSeenVetoVotes.begin();
+    while (it5 != mapSeenVetoVotes.end()) {
+        if (it5->second.fValid) {
+            if ((fPartial && !it5->second.fSynced) || !fPartial) {
+                pfrom->PushInventory(CInv(MSG_VETO_VOTE, it5->second.GetHash()));
+            }
+        }
+        ++it5;
+    }
 }
 
 bool CBudgetManager::UpdateProposal(CBudgetVote& vote, CNode* pfrom, std::string& strError)
@@ -1387,8 +1463,182 @@ unsigned long getVetoHash(const std::string& str)
     return hash;
 }
 
+// ---------------------------------------------------------------------------
+// CVetoVote
+// ---------------------------------------------------------------------------
+
+CVetoVote::CVetoVote()
+{
+    nProposalHash = 0;
+    nTime = 0;
+    vchSig.clear();
+    fValid = true;
+    fSynced = false;
+}
+
+CVetoVote::CVetoVote(uint256 nProposalHashIn)
+{
+    nProposalHash = nProposalHashIn;
+    nTime = GetAdjustedTime();
+    vchSig.clear();
+    fValid = true;
+    fSynced = false;
+}
+
+std::string CVetoVote::GetSignatureMessage() const
+{
+    // Bind the veto to the exact proposal hash and network.
+    return nProposalHash.ToString() + boost::lexical_cast<std::string>(nTime) + Params().NetworkIDString();
+}
+
+void CVetoVote::Relay()
+{
+    CInv inv(MSG_VETO_VOTE, GetHash());
+    RelayInv(inv);
+}
+
+bool CVetoVote::Sign(CKey& keyOwner)
+{
+    std::string errorMessage;
+    std::string strMessage = GetSignatureMessage();
+
+    if (!obfuScationSigner.SignMessage(strMessage, errorMessage, vchSig, keyOwner)) {
+        LogPrint("masternode", "CVetoVote::Sign - Error upon calling SignMessage: %s\n", errorMessage);
+        return false;
+    }
+
+    if (!IsSignatureValid()) {
+        LogPrint("masternode", "CVetoVote::Sign - Signature verification failed after signing\n");
+        return false;
+    }
+
+    return true;
+}
+
+bool CVetoVote::IsSignatureValid()
+{
+    if (vchSig.size() != 65) {
+        LogPrint("masternode", "CVetoVote::IsSignatureValid - Invalid compact signature size %u\n", (unsigned int)vchSig.size());
+        return false;
+    }
+
+    std::vector<unsigned char> vchKey = ParseHex(Params().VetoKey());
+    CPubKey pubKeyOwner(vchKey.begin(), vchKey.end());
+    if (!pubKeyOwner.IsValid()) {
+        LogPrint("masternode", "CVetoVote::IsSignatureValid - Invalid hardcoded veto pubkey\n");
+        return false;
+    }
+
+    CHashWriter ss(SER_GETHASH, 0);
+    ss << strMessageMagic;
+    ss << GetSignatureMessage();
+
+    CPubKey pubKeyRecovered;
+    if (!pubKeyRecovered.RecoverCompact(ss.GetHash(), vchSig)) {
+        LogPrint("masternode", "CVetoVote::IsSignatureValid - Failed to recover veto pubkey from signature\n");
+        return false;
+    }
+
+    if (pubKeyRecovered != pubKeyOwner) {
+        LogPrint("masternode", "CVetoVote::IsSignatureValid - Recovered pubkey does not match hardcoded veto pubkey\n");
+        return false;
+    }
+
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// CBudgetManager veto methods
+// ---------------------------------------------------------------------------
+
+bool CBudgetManager::HasVetoVoteForProposalNoLock(const uint256& nProposalHash) const
+{
+    for (std::map<uint256, CVetoVote>::const_iterator it = mapSeenVetoVotes.begin(); it != mapSeenVetoVotes.end(); ++it) {
+        if (it->second.nProposalHash == nProposalHash && it->second.fValid)
+            return true;
+    }
+    return false;
+}
+
+bool CBudgetManager::IsVetoedNoLock(const uint256& nProposalHash, int nHeight) const
+{
+    if (nHeight < Params().VetoForkHeight())
+        return false;
+
+    return HasVetoVoteForProposalNoLock(nProposalHash);
+}
+
+bool CBudgetManager::FinalizedBudgetPaymentVetoedNoLock(CFinalizedBudget& finalizedBudget, int nBlockHeight) const
+{
+    CTxBudgetPayment payment;
+    if (!finalizedBudget.GetBudgetPaymentByBlock(nBlockHeight, payment))
+        return false;
+
+    return IsVetoedNoLock(payment.nProposalHash, nBlockHeight);
+}
+
+bool CBudgetManager::HasVetoVoteForProposal(const uint256& nProposalHash)
+{
+    LOCK(cs);
+    return HasVetoVoteForProposalNoLock(nProposalHash);
+}
+
+bool CBudgetManager::IsVetoed(const uint256& nProposalHash)
+{
+    int nHeight = chainActive.Tip() ? chainActive.Height() : 0;
+    return IsVetoed(nProposalHash, nHeight);
+}
+
+bool CBudgetManager::IsVetoed(const uint256& nProposalHash, int nHeight)
+{
+    LOCK(cs);
+    return IsVetoedNoLock(nProposalHash, nHeight);
+}
+
+bool CBudgetManager::AddVetoVote(CVetoVote& vote, std::string& strError)
+{
+    LOCK(cs);
+
+    if (vote.nProposalHash == 0) {
+        strError = "Invalid proposal hash";
+        return false;
+    }
+
+    if (HasVetoVoteForProposalNoLock(vote.nProposalHash)) {
+        strError = "Veto already recorded for this proposal";
+        return false;
+    }
+
+    if (mapSeenVetoVotes.count(vote.GetHash())) {
+        strError = "Duplicate veto vote";
+        return false;
+    }
+
+    if (!vote.IsSignatureValid()) {
+        strError = "Invalid veto signature";
+        return false;
+    }
+
+    mapSeenVetoVotes.insert(make_pair(vote.GetHash(), vote));
+
+    // Immediately mark the proposal invalid if it is already stored
+    if (mapProposals.count(vote.nProposalHash)) {
+        std::string strValError = "";
+        mapProposals[vote.nProposalHash].fValid = mapProposals[vote.nProposalHash].IsValid(strValError);
+    }
+
+    LogPrint("masternode", "CBudgetManager::AddVetoVote - veto recorded for proposal %s\n", vote.nProposalHash.ToString());
+    return true;
+}
+
 bool CBudgetProposal::IsValid(std::string& strError, bool fCheckCollateral)
 {
+    // CONSENSUS RISK — owner veto overrides all other checks; enforced post-fork
+    if (budget.IsVetoed(GetHash())) {
+        strError = "Proposal " + strProposalName + ": Vetoed by chain owner";
+        return false;
+    }
+
     if (GetNays() - GetYeas() > mnodeman.CountEnabled(ActiveProtocol()) / 10) {
         strError = "Proposal " + strProposalName + ": Active removal";
         return false;
@@ -1402,7 +1652,8 @@ bool CBudgetProposal::IsValid(std::string& strError, bool fCheckCollateral)
     int vetoHash = getVetoHash(proposalStr) % 2000000000;
 
     LogPrint("mnbudget", "CBudgetProposal::IsValid Proposal '%s' has VETO hash %d\n", proposalStr, vetoHash);
-    if (GetSporkValue(SPORK_12_PROPOSAL_VETO) == vetoHash) {
+    const int nValidationHeight = chainActive.Tip() ? chainActive.Height() : 0;
+    if (nValidationHeight < Params().VetoForkHeight() && GetSporkValue(SPORK_12_PROPOSAL_VETO) == vetoHash) {
         strError = "Proposal Veto";
         return false;
     }
@@ -1982,6 +2233,15 @@ bool CFinalizedBudget::IsValid(std::string& strError, bool fCheckCollateral)
 
     //TODO: if N cycles old, invalid, invalid
 
+    // Reject finalized budgets that include a payment vetoed at the block where it would execute.
+    for (size_t i = 0; i < vecBudgetPayments.size(); ++i) {
+        const int nPaymentHeight = nBlockStart + static_cast<int>(i);
+        if (budget.IsVetoed(vecBudgetPayments[i].nProposalHash, nPaymentHeight)) {
+            strError = "Budget " + strBudgetName + " contains vetoed proposal " + vecBudgetPayments[i].nProposalHash.ToString();
+            return false;
+        }
+    }
+
     CBlockIndex* pindexPrev = chainActive.Tip();
     if (pindexPrev == NULL) return true;
 
@@ -2005,6 +2265,12 @@ bool CFinalizedBudget::IsTransactionValid(const CTransaction& txNew, int nBlockH
 
     if (nCurrentBudgetPayment > (int)vecBudgetPayments.size() - 1) {
         LogPrint("masternode","CFinalizedBudget::IsTransactionValid - Invalid block - current budget payment: %d of %d\n", nCurrentBudgetPayment + 1, (int)vecBudgetPayments.size());
+        return false;
+    }
+
+    if (budget.IsVetoed(vecBudgetPayments[nCurrentBudgetPayment].nProposalHash, nBlockHeight)) {
+        LogPrint("masternode","CFinalizedBudget::IsTransactionValid - Proposal %s vetoed at block %d\n",
+                  vecBudgetPayments[nCurrentBudgetPayment].nProposalHash.ToString().c_str(), nBlockHeight);
         return false;
     }
 
@@ -2168,7 +2434,7 @@ std::string CBudgetManager::ToString() const
 {
     std::ostringstream info;
 
-    info << "Proposals: " << (int)mapProposals.size() << ", Budgets: " << (int)mapFinalizedBudgets.size() << ", Seen Budgets: " << (int)mapSeenMasternodeBudgetProposals.size() << ", Seen Budget Votes: " << (int)mapSeenMasternodeBudgetVotes.size() << ", Seen Final Budgets: " << (int)mapSeenFinalizedBudgets.size() << ", Seen Final Budget Votes: " << (int)mapSeenFinalizedBudgetVotes.size();
+    info << "Proposals: " << (int)mapProposals.size() << ", Budgets: " << (int)mapFinalizedBudgets.size() << ", Seen Budgets: " << (int)mapSeenMasternodeBudgetProposals.size() << ", Seen Budget Votes: " << (int)mapSeenMasternodeBudgetVotes.size() << ", Seen Final Budgets: " << (int)mapSeenFinalizedBudgets.size() << ", Seen Final Budget Votes: " << (int)mapSeenFinalizedBudgetVotes.size() << ", Seen Veto Votes: " << (int)mapSeenVetoVotes.size();
 
     return info.str();
 }

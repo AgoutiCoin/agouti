@@ -87,6 +87,8 @@ public:
     virtual const Checkpoints::CCheckpointData& Checkpoints() const = 0;
     int PoolMaxTransactions() const { return nPoolMaxTransactions; }
     std::string SporkKey() const { return strSporkKey; }
+    std::string VetoKey() const { return strVetoKey; }
+    int VetoForkHeight() const { return nVetoForkHeight; }
     std::string ObfuscationPoolDummyAddress() const { return strObfuscationPoolDummyAddress; }
     int64_t StartMasternodePayments() const { return nStartMasternodePayments; }
     int64_t Budget_Fee_Confirmations() const { return nBudget_Fee_Confirmations; }
@@ -144,6 +146,8 @@ protected:
     bool fHeadersFirstSyncingActive;
     int nPoolMaxTransactions;
     std::string strSporkKey;
+    std::string strVetoKey;
+    int nVetoForkHeight;
     std::string strObfuscationPoolDummyAddress;
     int64_t nStartMasternodePayments;
     int nMintRequiredConfirmations;

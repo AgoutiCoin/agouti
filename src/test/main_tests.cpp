@@ -4,6 +4,7 @@
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include "masternode-budget.h"
 #include "primitives/transaction.h"
 #include "main.h"
 
@@ -144,6 +145,47 @@ BOOST_AUTO_TEST_CASE(stakepointer_checkstake_rejects_legacy_coinstake_after_fork
 
     LOCK(cs_main);
     BOOST_CHECK(!CheckStake(&prev, block, hashProofOfStake));
+}
+
+BOOST_AUTO_TEST_CASE(veto_height_activation_blocks_budget_payment_paths)
+{
+    budget.Clear();
+
+    const int nForkHeight = Params().VetoForkHeight();
+    const uint256 proposalHash = uint256S("01");
+
+    CVetoVote vetoVote;
+    vetoVote.nProposalHash = proposalHash;
+    vetoVote.nTime = 1;
+    vetoVote.fValid = true;
+    budget.mapSeenVetoVotes.insert(std::make_pair(vetoVote.GetHash(), vetoVote));
+
+    BOOST_CHECK(!budget.IsVetoed(proposalHash, nForkHeight - 1));
+    BOOST_CHECK(budget.IsVetoed(proposalHash, nForkHeight));
+
+    CFinalizedBudget finalizedBudget;
+    finalizedBudget.fValid = true;
+    finalizedBudget.strBudgetName = "main";
+    finalizedBudget.nBlockStart = nForkHeight;
+    finalizedBudget.nFeeTXHash = uint256S("02");
+
+    CTxBudgetPayment payment;
+    payment.nProposalHash = proposalHash;
+    payment.payee = DummyStakeScript();
+    payment.nAmount = 5 * COIN;
+    finalizedBudget.vecBudgetPayments.push_back(payment);
+    finalizedBudget.mapVotes.insert(std::make_pair(uint256S("03"), CFinalizedBudgetVote()));
+
+    budget.mapFinalizedBudgets.insert(std::make_pair(finalizedBudget.GetHash(), finalizedBudget));
+
+    CMutableTransaction txNew;
+    txNew.vout.push_back(CTxOut(payment.nAmount, payment.payee));
+
+    BOOST_CHECK(!budget.IsBudgetPaymentBlock(nForkHeight));
+    BOOST_CHECK(!budget.IsTransactionValid(CTransaction(txNew), nForkHeight));
+    BOOST_CHECK_EQUAL(budget.GetRequiredPaymentsString(nForkHeight), "unknown-budget");
+
+    budget.Clear();
 }
 
 BOOST_AUTO_TEST_SUITE_END()
