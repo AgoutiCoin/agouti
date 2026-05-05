@@ -23,8 +23,8 @@ BOOST_AUTO_TEST_CASE(outbound_connection_attempt_test)
     // Invalid address (empty CAddress) must stop the loop
     BOOST_CHECK(GetOutboundConnectionAttempt(CAddress(), false, nNow, 1) == OUTBOUND_CONNECTION_STOP);
 
-    // Over the 100-try limit must stop the loop
-    BOOST_CHECK(GetOutboundConnectionAttempt(routable, false, nNow, 101) == OUTBOUND_CONNECTION_STOP);
+    // Over the 200-try limit must stop the loop
+    BOOST_CHECK(GetOutboundConnectionAttempt(routable, false, nNow, 201) == OUTBOUND_CONNECTION_STOP);
 
     // Address whose network group is already connected must be skipped (not stop)
     // This is the core fix: previously this was a break, causing the loop to abort
@@ -46,17 +46,17 @@ BOOST_AUTO_TEST_CASE(outbound_connection_attempt_test)
     BOOST_CHECK(GetOutboundConnectionAttempt(routable, false, nNow, 1) == OUTBOUND_CONNECTION_SKIP);
     SetLimited(NET_IPV4, false); // restore
 
-    // Very recently tried addresses are skipped until nTries >= 30
+    // Very recently tried addresses are skipped until nTries >= 8
     CAddress recent(routable);
     recent.nLastTry = nNow;
     BOOST_CHECK(GetOutboundConnectionAttempt(recent, false, nNow, 1)  == OUTBOUND_CONNECTION_SKIP);
-    BOOST_CHECK(GetOutboundConnectionAttempt(recent, false, nNow, 30) == OUTBOUND_CONNECTION_CONNECT);
+    BOOST_CHECK(GetOutboundConnectionAttempt(recent, false, nNow, 8) == OUTBOUND_CONNECTION_CONNECT);
 
-    // Non-default port addresses are skipped until nTries >= 50
+    // Non-default port addresses are skipped until nTries >= 16
     CAddress nondefault(CService("9.9.9.9", Params().GetDefaultPort() + 1));
     nondefault.nLastTry = 0;
     BOOST_CHECK(GetOutboundConnectionAttempt(nondefault, false, nNow, 1)  == OUTBOUND_CONNECTION_SKIP);
-    BOOST_CHECK(GetOutboundConnectionAttempt(nondefault, false, nNow, 50) == OUTBOUND_CONNECTION_CONNECT);
+    BOOST_CHECK(GetOutboundConnectionAttempt(nondefault, false, nNow, 16) == OUTBOUND_CONNECTION_CONNECT);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

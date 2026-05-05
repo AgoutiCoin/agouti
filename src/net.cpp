@@ -14,6 +14,7 @@
 #include "addrman.h"
 #include "chainparams.h"
 #include "clientversion.h"
+#include "masternodeman.h"
 #include "miner.h"
 #include "obfuscation.h"
 #include "primitives/transaction.h"
@@ -60,6 +61,12 @@ using namespace std;
 namespace
 {
 const int MAX_OUTBOUND_CONNECTIONS = 16;
+const int DNS_SEED_DELAY_MILLIS = 3 * 1000;
+const int FIXED_SEEDS_DELAY_SECONDS = 12;
+const int OUTBOUND_MAX_SELECTION_TRIES = 200;
+const int OUTBOUND_RECENT_TRY_SKIP_SECONDS = 120;
+const int OUTBOUND_RECENT_TRY_MAX_SKIPS = 8;
+const int OUTBOUND_NONDEFAULT_PORT_MAX_SKIPS = 16;
 
 struct ListenSocket {
     SOCKET socket;
@@ -116,6 +123,43 @@ void AddOneShot(string strDest)
 {
     LOCK(cs_vOneShots);
     vOneShots.push_back(strDest);
+}
+
+static void PrimeAddrmanFromMasternodeCache()
+{
+    const std::vector<CMasternode> vMasternodes = mnodeman.GetFullMasternodeVector();
+    if (vMasternodes.empty())
+        return;
+
+    std::vector<CAddress> vMasternodeAddrs;
+    vMasternodeAddrs.reserve(vMasternodes.size());
+
+    static const unsigned int MAX_MASTERNODE_ONESHOTS = 32;
+    unsigned int nQueuedOneShots = 0;
+    const int64_t nNow = GetAdjustedTime();
+
+    BOOST_FOREACH (const CMasternode& mn, vMasternodes) {
+        CAddress addr(mn.addr);
+        if (!addr.IsValid() || !addr.IsRoutable())
+            continue;
+
+        // Keep addresses fresh in addrman so startup outbound selection can use them immediately.
+        addr.nTime = nNow - GetRand(12 * 60 * 60);
+        vMasternodeAddrs.push_back(addr);
+
+        if (nQueuedOneShots < MAX_MASTERNODE_ONESHOTS) {
+            AddOneShot(addr.ToStringIPPort());
+            nQueuedOneShots++;
+        }
+    }
+
+    if (vMasternodeAddrs.empty())
+        return;
+
+    addrman.Add(vMasternodeAddrs, CNetAddr("127.0.0.1"));
+    const unsigned int nAdded = vMasternodeAddrs.size();
+    LogPrintf("Primed addrman with %u masternode addresses from mncache.dat and queued %u immediate outbound attempts\n",
+              nAdded, nQueuedOneShots);
 }
 
 unsigned short GetListenPort()
@@ -1115,7 +1159,7 @@ void ThreadDNSAddressSeed()
     // goal: only query DNS seeds if address need is acute
     if ((addrman.size() > 0) &&
         (!GetBoolArg("-forcednsseed", false))) {
-        MilliSleep(11 * 1000);
+        MilliSleep(DNS_SEED_DELAY_MILLIS);
 
         LOCK(cs_vNodes);
         if (vNodes.size() >= 2) {
@@ -1183,18 +1227,18 @@ void static ProcessOneShot()
 
 OutboundConnectionAttempt GetOutboundConnectionAttempt(const CAddress& addr, bool fConnectedGroup, int64_t nANow, int nTries)
 {
-    if (!addr.IsValid() || nTries > 100)
+    if (!addr.IsValid() || nTries > OUTBOUND_MAX_SELECTION_TRIES)
         return OUTBOUND_CONNECTION_STOP;
 
     if (fConnectedGroup || IsLocal(addr) || IsLimited(addr))
         return OUTBOUND_CONNECTION_SKIP;
 
-    // only consider very recently tried nodes after 30 failed attempts
-    if (nANow - addr.nLastTry < 600 && nTries < 30)
+    // only consider very recently tried nodes after a few failed attempts
+    if (nANow - addr.nLastTry < OUTBOUND_RECENT_TRY_SKIP_SECONDS && nTries < OUTBOUND_RECENT_TRY_MAX_SKIPS)
         return OUTBOUND_CONNECTION_SKIP;
 
-    // do not allow non-default ports, unless after 50 invalid addresses selected already
-    if (addr.GetPort() != Params().GetDefaultPort() && nTries < 50)
+    // do not allow non-default ports until we've sampled enough default-port peers
+    if (addr.GetPort() != Params().GetDefaultPort() && nTries < OUTBOUND_NONDEFAULT_PORT_MAX_SKIPS)
         return OUTBOUND_CONNECTION_SKIP;
 
     return OUTBOUND_CONNECTION_CONNECT;
@@ -1228,7 +1272,7 @@ void ThreadOpenConnections()
         boost::this_thread::interruption_point();
 
         // Add seed nodes if DNS seeds are all down (an infrastructure attack?).
-        if (addrman.size() == 0 && (GetTime() - nStart > 60)) {
+        if (addrman.size() == 0 && (GetTime() - nStart > FIXED_SEEDS_DELAY_SECONDS)) {
             static bool done = false;
             if (!done) {
                 LogPrintf("Adding fixed seed nodes as DNS doesn't seem to be available.\n");
@@ -1602,6 +1646,7 @@ void StartNode(boost::thread_group& threadGroup)
     }
     LogPrintf("Loaded %i addresses from peers.dat  %dms\n",
         addrman.size(), GetTimeMillis() - nStart);
+    PrimeAddrmanFromMasternodeCache();
     fAddressesInitialized = true;
 
     if (semOutbound == NULL) {
