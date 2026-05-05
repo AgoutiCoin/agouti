@@ -94,7 +94,7 @@ fi
 
 if [[ ! -f "$SNAPSHOT" ]]; then
   echo "Downloading blockchain snapshot..."
-  wget "https://agouti.io/agoutisnapshot15032026.zip" -O "$SNAPSHOT"
+  wget "https://agouti.io/agoutisnapshot.zip" -O "$SNAPSHOT"
 fi
 echo "Extracting snapshot to $CONF_DIR..."
 unzip -o "$SNAPSHOT" -d "$CONF_DIR"
