@@ -17,6 +17,7 @@
 #include "net.h"
 #include "networkstyle.h"
 #include "optionsmodel.h"
+#include "snapshotrecovery.h"
 #include "splashscreen.h"
 #include "utilitydialog.h"
 #include "winshutdownmonitor.h"
@@ -40,6 +41,7 @@
 #include <stdint.h>
 
 #include <boost/filesystem/operations.hpp>
+#include <boost/interprocess/sync/file_lock.hpp>
 #include <boost/thread.hpp>
 
 #include <QApplication>
@@ -109,6 +111,102 @@ static QString GetLangTerritory()
     // 3) -lang command line argument
     lang_territory = QString::fromStdString(GetArg("-lang", lang_territory.toStdString()));
     return lang_territory;
+}
+
+static void CleanupSnapshotTempDirs(const boost::filesystem::path& dataDir)
+{
+    boost::system::error_code ec;
+    boost::filesystem::directory_iterator it(dataDir, ec);
+    boost::filesystem::directory_iterator end;
+    if (ec)
+        return;
+    for (; it != end; it.increment(ec)) {
+        if (ec)
+            break;
+        const std::string name = it->path().filename().string();
+        if (name.find(".snapshot-work-") != 0 && name.find(".snapshot-recovery-") != 0)
+            continue;
+        boost::system::error_code stEc;
+        boost::filesystem::file_status st = boost::filesystem::symlink_status(it->path(), stEc);
+        if (stEc || boost::filesystem::is_symlink(st) || !boost::filesystem::is_directory(st)) {
+            LogPrintf("SnapshotRecovery: refusing to remove non-directory leftover entry: %s\n",
+                      it->path().string());
+            continue;
+        }
+        LogPrintf("SnapshotRecovery: removing leftover temp dir: %s\n", it->path().string());
+        boost::system::error_code removeEc;
+        boost::filesystem::remove_all(it->path(), removeEc);
+        if (removeEc)
+            LogPrintf("SnapshotRecovery: failed to remove %s: %s\n",
+                      it->path().string(), removeEc.message());
+    }
+}
+
+static bool CheckSnapshotRecoveryRequired(const boost::filesystem::path& dataDir, bool& needsRecovery, QString& error)
+{
+    static const char* requiredDirs[] = {"blocks", "chainstate", "sporks", NULL};
+    needsRecovery = false;
+    bool symlinkedDirSeen = false;
+
+    for (int i = 0; requiredDirs[i] != NULL; ++i) {
+        boost::filesystem::path path = dataDir / requiredDirs[i];
+        boost::system::error_code ec;
+        boost::filesystem::file_status st = boost::filesystem::symlink_status(path, ec);
+        if (ec && ec == boost::system::errc::no_such_file_or_directory) {
+            needsRecovery = true;
+            continue;
+        }
+        if (ec) {
+            error = QObject::tr("Cannot inspect blockchain directory \"%1\": %2")
+                        .arg(QString::fromStdString(path.string()), QString::fromStdString(ec.message()));
+            return false;
+        }
+        if (st.type() == boost::filesystem::file_not_found || !boost::filesystem::exists(st)) {
+            needsRecovery = true;
+            continue;
+        }
+        if (boost::filesystem::is_symlink(st)) {
+            symlinkedDirSeen = true;
+            boost::filesystem::file_status targetStatus = boost::filesystem::status(path, ec);
+            if (ec) {
+                error = QObject::tr("Cannot resolve symlinked blockchain directory \"%1\": %2")
+                            .arg(QString::fromStdString(path.string()), QString::fromStdString(ec.message()));
+                return false;
+            }
+            if (!boost::filesystem::is_directory(targetStatus)) {
+                needsRecovery = true;
+                continue;
+            }
+            boost::filesystem::directory_iterator it(path, ec);
+            (void)it;
+            if (ec) {
+                error = QObject::tr("Cannot read symlinked blockchain directory \"%1\": %2")
+                            .arg(QString::fromStdString(path.string()), QString::fromStdString(ec.message()));
+                return false;
+            }
+            continue;
+        }
+        if (!boost::filesystem::is_directory(st)) {
+            needsRecovery = true;
+            continue;
+        }
+
+        boost::filesystem::directory_iterator it(path, ec);
+        (void)it;
+        if (ec) {
+            error = QObject::tr("Cannot read blockchain directory \"%1\": %2")
+                        .arg(QString::fromStdString(path.string()), QString::fromStdString(ec.message()));
+            return false;
+        }
+    }
+
+    if (needsRecovery && symlinkedDirSeen) {
+        error = QObject::tr("Snapshot recovery cannot safely delete symlinked blockchain directories. "
+                            "Move or restore the missing blockchain directories manually, then restart.");
+        return false;
+    }
+
+    return true;
 }
 
 /** Set up translations */
@@ -694,6 +792,58 @@ int main(int argc, char* argv[])
     // agouti: links repeatedly have their payment requests routed to this process:
     app.createPaymentServer();
 #endif
+
+    /// 8b. Snapshot recovery: lock data dir, clean up crash-interrupted temp dirs, then offer recovery
+    {
+        boost::filesystem::path dataDir = GetDataDir();
+        boost::filesystem::path pathLockFile = dataDir / ".lock";
+        FILE* lockFp = fopen(pathLockFile.string().c_str(), "a");
+        if (lockFp) fclose(lockFp);
+
+        try {
+            boost::interprocess::file_lock recoveryLock(pathLockFile.string().c_str());
+            if (!recoveryLock.try_lock()) {
+                QMessageBox::critical(0, QObject::tr("Agouti Core"),
+                    QObject::tr("Cannot obtain a lock on data directory \"%1\". Agouti Core is probably already running.")
+                        .arg(QString::fromStdString(dataDir.string())));
+                return 1;
+            }
+
+            CleanupSnapshotTempDirs(dataDir);
+
+            bool needsRecovery = false;
+            QString recoveryCheckError;
+            if (!CheckSnapshotRecoveryRequired(dataDir, needsRecovery, recoveryCheckError)) {
+                QMessageBox::critical(0, QObject::tr("Agouti Core"),
+                    QObject::tr("Snapshot recovery safety check failed: %1").arg(recoveryCheckError));
+                return 1;
+            }
+            if (needsRecovery) {
+                QMessageBox::StandardButton answer = QMessageBox::question(
+                    0,
+                    QObject::tr("Incomplete blockchain data"),
+                    QObject::tr("Incomplete blockchain data detected. Recover from snapshot?"),
+                    QMessageBox::Yes | QMessageBox::No,
+                    QMessageBox::Yes);
+                if (answer == QMessageBox::Yes) {
+                    SnapshotRecoveryDialog dlg(dataDir);
+                    dlg.exec();
+                    if (!dlg.recoverySucceeded() && !dlg.recoveryCancelled()) {
+                        QMessageBox::critical(0, QObject::tr("Agouti Core"),
+                            QObject::tr("Snapshot recovery failed. Startup aborted: %1").arg(dlg.failureReason()));
+                        return 1;
+                    }
+                    // Cancelled or succeeded: fall through to normal startup;
+                    // if cancelled, online sync will resume from whatever exists.
+                }
+            }
+            // recoveryLock destructor releases the lock here; AppInit2 reacquires it later.
+        } catch (const std::exception& e) {
+            QMessageBox::critical(0, QObject::tr("Agouti Core"),
+                QObject::tr("Cannot lock data directory: %1").arg(e.what()));
+            return 1;
+        }
+    }
 
     /// 9. Main GUI initialization
     // Install global event filter that makes sure that long tooltips can be word-wrapped
