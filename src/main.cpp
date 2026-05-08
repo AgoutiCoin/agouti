@@ -2831,6 +2831,10 @@ bool ActivateBestChain(CValidationState& state, CBlock* pblock)
     CBlockIndex* pindexMostWork = NULL;
     do {
         boost::this_thread::interruption_point();
+        // The Qt core thread is not a boost::thread, so the interruption point above is a no-op there.
+        // Honour an explicit shutdown request so the GUI can close promptly during initial chain activation.
+        if (ShutdownRequested())
+            return true;
 
         bool fInitialDownload;
         while (true) {

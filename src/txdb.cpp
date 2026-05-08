@@ -8,7 +8,9 @@
 
 #include "main.h"
 #include "pow.h"
+#include "ui_interface.h"
 #include "uint256.h"
+#include "util.h"
 
 #include <stdint.h>
 
@@ -214,6 +216,16 @@ bool CBlockTreeDB::LoadBlockIndexGuts()
     ssKeySet << make_pair('b', uint256(0));
     pcursor->Seek(ssKeySet.str());
 
+    // Estimate from previous run for percentage progress; 0 on first run.
+    int nEstTotal = 0;
+    {
+        int tmp = 0;
+        if (ReadInt("blockindexcount", tmp) && tmp > 0)
+            nEstTotal = tmp;
+    }
+    int nLoaded = 0;
+    int64_t nLastReportMs = 0;
+
     // Load mapBlockIndex
     while (pcursor->Valid()) {
         boost::this_thread::interruption_point();
@@ -267,6 +279,13 @@ bool CBlockTreeDB::LoadBlockIndexGuts()
                     setStakeSeen.insert(make_pair(pindexNew->prevoutStake, pindexNew->nStakeTime));
 
                 pcursor->Next();
+
+                ++nLoaded;
+                int64_t nNow = GetTimeMillis();
+                if (nNow - nLastReportMs >= 250) {
+                    nLastReportMs = nNow;
+                    uiInterface.InitMessage(strprintf("Loading block index... %d", nLoaded));
+                }
             } else {
                 break; // if shutdown requested or finished loading block index
             }
@@ -274,6 +293,9 @@ bool CBlockTreeDB::LoadBlockIndexGuts()
             return error("%s : Deserialize or I/O error - %s", __func__, e.what());
         }
     }
+
+    // Persist count so next run can show a percentage.
+    WriteInt("blockindexcount", nLoaded);
 
     return true;
 }

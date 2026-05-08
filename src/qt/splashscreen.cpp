@@ -21,6 +21,7 @@
 #include <QCloseEvent>
 #include <QDesktopWidget>
 #include <QPainter>
+#include <QThread>
 
 SplashScreen::SplashScreen(Qt::WindowFlags f, const NetworkStyle* networkStyle) : QWidget(0, f), curAlignment(0)
 {
@@ -162,9 +163,28 @@ void SplashScreen::paintEvent(QPaintEvent* event)
 {
     QPainter painter(this);
     painter.drawPixmap(0, 0, pixmap);
-    QRect r = rect().adjusted(5, 5, -5, -5);
-    painter.setPen(curColor);
-    painter.drawText(r, curAlignment, curMessage);
+
+    if (curMessage.isEmpty())
+        return;
+
+    QFont msgFont = QApplication::font();
+    msgFont.setPointSize(11);
+    msgFont.setBold(true);
+    painter.setFont(msgFont);
+
+    QFontMetrics fm = painter.fontMetrics();
+    QRect textRect = fm.boundingRect(curMessage);
+    const int padX = 8;
+    const int padY = 4;
+    const int bottomMargin = 8;
+    int boxW = textRect.width() + 2 * padX;
+    int boxH = textRect.height() + 2 * padY;
+    int boxX = (width() - boxW) / 2;
+    int boxY = height() - boxH - bottomMargin;
+    QRect boxRect(boxX, boxY, boxW, boxH);
+
+    painter.setPen(QColor(0x0f, 0x77, 0x3c));
+    painter.drawText(boxRect, Qt::AlignCenter, curMessage);
 }
 
 void SplashScreen::closeEvent(QCloseEvent* event)
