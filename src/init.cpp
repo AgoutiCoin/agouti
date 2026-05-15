@@ -26,6 +26,7 @@
 #include "miner.h"
 #include "net.h"
 #include "rpcserver.h"
+#include "script/sigcache.h"
 #include "script/standard.h"
 #include "spork.h"
 #include "sporkdb.h"
@@ -34,6 +35,7 @@
 #include "ui_interface.h"
 #include "util.h"
 #include "utilmoneystr.h"
+#include "utilstrencodings.h"
 #include "validationinterface.h"
 #ifdef ENABLE_WALLET
 #include "db.h"
@@ -339,6 +341,8 @@ std::string HelpMessage(HelpMessageMode mode)
 #endif
     strUsage += HelpMessageOpt("-txindex", strprintf(_("Maintain a full transaction index, used by the getrawtransaction rpc call (default: %u)"), 0));
     strUsage += HelpMessageOpt("-forcestart", _("Attempt to force blockchain corruption recovery") + " " + _("on startup"));
+    strUsage += HelpMessageOpt("-assumevalid=<hex>", strprintf(_("If this block is in the chain, assume it and its ancestors have valid scripts and skip their verification (0 to verify all, default: %s)"), Params(CBaseChainParams::MAIN).AssumeValidHash().GetHex()));
+    strUsage += HelpMessageOpt("-minimumchainwork=<hex>", strprintf(_("Minimum cumulative chainwork required before -assumevalid script skipping activates (default: %s)"), Params(CBaseChainParams::MAIN).AssumeValidMinimumChainWork().GetHex()));
 
     strUsage += HelpMessageGroup(_("Connection options:"));
     strUsage += HelpMessageOpt("-addnode=<ip>", _("Add a node to connect to and attempt to keep the connection open"));
@@ -447,7 +451,7 @@ std::string HelpMessage(HelpMessageMode mode)
     if (GetBoolArg("-help-debug", false)) {
         strUsage += HelpMessageOpt("-limitfreerelay=<n>", strprintf(_("Continuously rate-limit free transactions to <n>*1000 bytes per minute (default:%u)"), 15));
         strUsage += HelpMessageOpt("-relaypriority", strprintf(_("Require high priority for relaying free or low-fee transactions (default:%u)"), 1));
-        strUsage += HelpMessageOpt("-maxsigcachesize=<n>", strprintf(_("Limit size of signature cache to <n> entries (default: %u)"), 50000));
+        strUsage += HelpMessageOpt("-maxsigcachesize=<n>", strprintf(_("Limit size of signature cache to <n> MiB (default: %u)"), DEFAULT_MAX_SIG_CACHE_SIZE));
     }
     strUsage += HelpMessageOpt("-minrelaytxfee=<amt>", strprintf(_("Fees (in AGU/Kb) smaller than this are considered zero fee for relaying (default: %s)"), FormatMoney(::minRelayTxFee.GetFeePerK())));
     strUsage += HelpMessageOpt("-printtoconsole", strprintf(_("Send trace/debug info to console instead of debug.log file (default: %u)"), 0));
@@ -965,6 +969,45 @@ bool AppInit2(boost::thread_group& threadGroup)
     if (nScriptCheckThreads) {
         for (int i = 0; i < nScriptCheckThreads - 1; i++)
             threadGroup.create_thread(&ThreadScriptCheck);
+    }
+
+    // Signature cache — must be initialised before block validation begins.
+    InitSignatureCache();
+
+    // assumevalid — allow operators to override the compiled-in default.
+    // Fail-safe: if no minimum chainwork is configured the assumevalid gate has
+    // no protection against an adversarial header chain, so disable script
+    // skipping entirely in that case.
+    {
+        std::string strMinimumChainWork = GetArg("-minimumchainwork", Params().AssumeValidMinimumChainWork().GetHex());
+        if (strMinimumChainWork == "0") {
+            nMinimumChainWork = uint256(0);
+        } else {
+            if (strMinimumChainWork.size() > 2 && strMinimumChainWork[0] == '0' &&
+                (strMinimumChainWork[1] == 'x' || strMinimumChainWork[1] == 'X'))
+                strMinimumChainWork = strMinimumChainWork.substr(2);
+            if (!strMinimumChainWork.empty() && (!IsHex(strMinimumChainWork) || strMinimumChainWork.size() > 64))
+                return InitError(strprintf(_("Invalid -minimumchainwork value '%s'"), strMinimumChainWork));
+            nMinimumChainWork = uint256S(strMinimumChainWork);
+        }
+
+        std::string strAssumeValid = GetArg("-assumevalid", Params().AssumeValidHash().GetHex());
+        if (strAssumeValid.empty() || strAssumeValid == "0") {
+            hashAssumeValid = uint256(0);
+            LogPrintf("assumevalid disabled — validating all scripts.\n");
+        } else if (nMinimumChainWork == uint256(0)) {
+            hashAssumeValid = uint256(0);
+            LogPrintf("assumevalid disabled — minimumchainwork unset; refusing to skip script validation.\n");
+        } else {
+            if (strAssumeValid.size() > 2 && strAssumeValid[0] == '0' &&
+                (strAssumeValid[1] == 'x' || strAssumeValid[1] == 'X'))
+                strAssumeValid = strAssumeValid.substr(2);
+            if (!IsHex(strAssumeValid) || strAssumeValid.size() > 64)
+                return InitError(strprintf(_("Invalid -assumevalid block hash '%s'"), strAssumeValid));
+            hashAssumeValid = uint256S(strAssumeValid);
+            LogPrintf("Assuming ancestors of block %s have valid scripts (minimum chain work %s).\n",
+                      hashAssumeValid.GetHex(), nMinimumChainWork.GetHex());
+        }
     }
 
     if (mapArgs.count("-sporkkey")) // spork priv key

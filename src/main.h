@@ -168,6 +168,12 @@ void RebuildStakePointerCache();
 /** Best header we've seen so far (used for getheaders queries' starting points). */
 extern CBlockIndex* pindexBestHeader;
 
+/** Block hash whose ancestors are assumed to have valid scripts (set via -assumevalid). */
+extern uint256 hashAssumeValid;
+
+/** Minimum chain work required before assumevalid script skipping activates. */
+extern uint256 nMinimumChainWork;
+
 /** Minimum disk space required - used in CheckDiskSpace() */
 static const uint64_t nMinDiskSpace = 52428800;
 

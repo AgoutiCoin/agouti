@@ -155,7 +155,7 @@ public:
         fMineBlocksOnDemand = false;
         fSkipProofOfWorkCheck = false;
         fTestnetToBeDeprecatedFieldRPC = false;
-        fHeadersFirstSyncingActive = false;
+        fHeadersFirstSyncingActive = true;
 
         nPoolMaxTransactions = 3;
         strSporkKey = "044FE5EBB7501A1BDCE6AA607A1E3A1125AE02885D1B73D20C2857BD86FC5C1A3A2FEB4080B9BC5444F329EDD9EA5896176B203F4CF5F6EDCB8CE1854FBEDD75B0";
@@ -170,6 +170,14 @@ public:
         nBudget_Fee_Confirmations = 6; // Number of confirmations for the finalization fee
 
         nStakeMinAge = 60 * 60; // 1 hour
+
+        // Block 2671895 — locally verified mainnet chain anchor, 2026-05-15.
+        hashAssumeValidDefault = uint256S("0x2320b314c41e82bda5024a672d9c07a5a0f71fed1571992447db293f1a04f4e7");
+        // Minimum cumulative chainwork required before assumevalid script-skipping
+        // activates.  This must be updated with the actual nChainWork of the
+        // assumevalid release anchor.  A zero value disables assumevalid entirely
+        // at startup (see init.cpp).
+        nMinimumChainWorkDefault = uint256S("0x0000000000000000000000000000000000000000000000021e6c4016c9d5d71e");
 
         /** StakePointer PoS kernel — set nStakePointerForkHeight before mainnet activation */
         nKernelModifierOffset       = 100;    // must equal nMaxReorganizationDepth
@@ -351,6 +359,7 @@ public:
     virtual void setAllowMinDifficultyBlocks(bool afAllowMinDifficultyBlocks) { fAllowMinDifficultyBlocks = afAllowMinDifficultyBlocks; }
     virtual void setSkipProofOfWorkCheck(bool afSkipProofOfWorkCheck) { fSkipProofOfWorkCheck = afSkipProofOfWorkCheck; }
 };
+static CUnitTestParams unitTestParams;
 
 static CChainParams* pCurrentParams = 0;
 
@@ -369,6 +378,8 @@ CChainParams& Params(CBaseChainParams::Network network)
         return testNetParams;
     case CBaseChainParams::REGTEST:
         return regTestParams;
+    case CBaseChainParams::UNITTEST:
+        return unitTestParams;
     default:
         assert(false && "Unimplemented network");
         return mainParams;
