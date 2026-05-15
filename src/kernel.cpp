@@ -298,37 +298,57 @@ bool stakeTargetHit(uint256 hashProofOfStake, int64_t nValueIn, uint256 bnTarget
     return (uint256(hashProofOfStake) < bnCoinDayWeight * bnTargetPerCoinDay);
 }
 
-//instead of looping outside and reinitializing variables many times, we will give a nTimeTx and also search interval so that we can do all the hashing here
-bool CheckStakeKernelHash(unsigned int nBits, const CBlock& blockFrom, const CTransaction& txPrev, const COutPoint& prevout, unsigned int& nTimeTx, unsigned int nHashDrift, bool fCheck, uint256& hashProofOfStake, bool fPrintProofOfStake, int nHeight)
+// Internal kernel hash implementation.
+// Accepts pre-extracted block parameters so callers with block-index access can
+// avoid deserialising the full CBlock from disk.
+// All parameters are consensus-inputs to the kernel hash; callers must not omit any.
+//
+// Consensus inputs covered:
+//   nBits            — difficulty target encoded in block header
+//   hashBlockFrom    — hash of the block containing the staked coin (commits to chain
+//                      position and feeds GetKernelStakeModifier)
+//   nTimeBlockFrom   — timestamp of that block (enforces StakeMinAge)
+//   nValueIn         — value of the staked output (stake weight)
+//   prevout          — outpoint of the staked coin (prevoutHash + n, hashed into kernel)
+//   nTimeTx          — coinstake transaction time (hashed into kernel)
+//   nHeight          — new block height (gates StakeWeightCap fork behaviour)
+//
+// nStakeModifier is derived deterministically from hashBlockFrom via
+// GetKernelStakeModifier and is therefore covered implicitly.
+static bool CheckStakeKernelHashImpl(
+    unsigned int nBits,
+    const uint256& hashBlockFrom,
+    unsigned int nTimeBlockFrom,
+    int64_t nValueIn,
+    const COutPoint& prevout,
+    unsigned int& nTimeTx,
+    unsigned int nHashDrift,
+    bool fCheck,
+    uint256& hashProofOfStake,
+    bool fPrintProofOfStake,
+    int nHeight)
 {
-    //assign new variables to make it easier to read
-    int64_t nValueIn = txPrev.vout[prevout.n].nValue;
-    unsigned int nTimeBlockFrom = blockFrom.GetBlockTime();
-
-    if (nTimeTx < nTimeBlockFrom) // Transaction timestamp violation
+    if (nTimeTx < nTimeBlockFrom)
         return error("CheckStakeKernelHash() : nTime violation");
 
-    if (nTimeBlockFrom + Params().StakeMinAge() > nTimeTx) // Min age requirement
-        return error("CheckStakeKernelHash() : min age violation - nTimeBlockFrom=%d nStakeMinAge=%u nTimeTx=%d", nTimeBlockFrom, Params().StakeMinAge(), nTimeTx);
+    if (nTimeBlockFrom + Params().StakeMinAge() > nTimeTx)
+        return error("CheckStakeKernelHash() : min age violation - nTimeBlockFrom=%d nStakeMinAge=%u nTimeTx=%d",
+                     nTimeBlockFrom, Params().StakeMinAge(), nTimeTx);
 
-    //grab difficulty
     uint256 bnTargetPerCoinDay;
     bnTargetPerCoinDay.SetCompact(nBits);
 
-    //grab stake modifier
     uint64_t nStakeModifier = 0;
     int nStakeModifierHeight = 0;
     int64_t nStakeModifierTime = 0;
-    if (!GetKernelStakeModifier(blockFrom.GetHash(), nStakeModifier, nStakeModifierHeight, nStakeModifierTime, fPrintProofOfStake)) {
-        LogPrintf("CheckStakeKernelHash(): failed to get kernel stake modifier \n");
+    if (!GetKernelStakeModifier(hashBlockFrom, nStakeModifier, nStakeModifierHeight, nStakeModifierTime, fPrintProofOfStake)) {
+        LogPrintf("CheckStakeKernelHash(): failed to get kernel stake modifier\n");
         return false;
     }
 
-    //create data stream once instead of repeating it in the loop
     CDataStream ss(SER_GETHASH, 0);
     ss << nStakeModifier;
 
-    //if wallet is simply checking to make sure a hash is valid
     if (fCheck) {
         hashProofOfStake = stakeHash(nTimeTx, ss, prevout.n, prevout.hash, nTimeBlockFrom);
         return stakeTargetHit(hashProofOfStake, nValueIn, bnTargetPerCoinDay, nHeight);
@@ -338,29 +358,27 @@ bool CheckStakeKernelHash(unsigned int nBits, const CBlock& blockFrom, const CTr
     unsigned int nTryTime = 0;
     unsigned int i;
     int nHeightStart = chainActive.Height();
-    for (i = 0; i < (nHashDrift); i++) //iterate the hashing
-    {
-        //new block came in, move on
+    for (i = 0; i < nHashDrift; i++) {
         if (chainActive.Height() != nHeightStart)
             break;
 
-        //hash this iteration
         nTryTime = nTimeTx + nHashDrift - i;
         hashProofOfStake = stakeHash(nTryTime, ss, prevout.n, prevout.hash, nTimeBlockFrom);
 
-        // if stake hash does not meet the target then continue to next iteration
         if (!stakeTargetHit(hashProofOfStake, nValueIn, bnTargetPerCoinDay, nHeight))
             continue;
 
-        fSuccess = true; // if we make it this far then we have successfully created a stake hash
+        fSuccess = true;
         nTimeTx = nTryTime;
 
         if (fDebug || fPrintProofOfStake) {
+            BlockMap::iterator it = mapBlockIndex.find(hashBlockFrom);
+            int nHeightBlockFrom = (it != mapBlockIndex.end()) ? it->second->nHeight : -1;
             LogPrintf("CheckStakeKernelHash() : using modifier %s at height=%d timestamp=%s for block from height=%d timestamp=%s\n",
                 boost::lexical_cast<std::string>(nStakeModifier).c_str(), nStakeModifierHeight,
                 DateTimeStrFormat("%Y-%m-%d %H:%M:%S", nStakeModifierTime).c_str(),
-                mapBlockIndex[blockFrom.GetHash()]->nHeight,
-                DateTimeStrFormat("%Y-%m-%d %H:%M:%S", blockFrom.GetBlockTime()).c_str());
+                nHeightBlockFrom,
+                DateTimeStrFormat("%Y-%m-%d %H:%M:%S", nTimeBlockFrom).c_str());
             LogPrintf("CheckStakeKernelHash() : pass protocol=%s modifier=%s nTimeBlockFrom=%u prevoutHash=%s nTimeTxPrev=%u nPrevout=%u nTimeTx=%u hashProof=%s\n",
                 "0.3",
                 boost::lexical_cast<std::string>(nStakeModifier).c_str(),
@@ -370,48 +388,81 @@ bool CheckStakeKernelHash(unsigned int nBits, const CBlock& blockFrom, const CTr
         break;
     }
 
-    AssertLockHeld(cs_main); // mapHashedBlocks and chainActive are protected by cs_main
+    AssertLockHeld(cs_main);
     mapHashedBlocks.clear();
-    mapHashedBlocks[chainActive.Tip()->nHeight] = GetTime(); //store a time stamp of when we last hashed on this block
+    mapHashedBlocks[chainActive.Tip()->nHeight] = GetTime();
     return fSuccess;
 }
 
-// Check kernel hash target and coinstake signature
+// Public API — retained for wallet/staking callers that already hold a full CBlock.
+bool CheckStakeKernelHash(unsigned int nBits, const CBlock& blockFrom, const CTransaction& txPrev, const COutPoint& prevout, unsigned int& nTimeTx, unsigned int nHashDrift, bool fCheck, uint256& hashProofOfStake, bool fPrintProofOfStake, int nHeight)
+{
+    return CheckStakeKernelHashImpl(
+        nBits,
+        blockFrom.GetHash(),
+        (unsigned int)blockFrom.GetBlockTime(),
+        txPrev.vout[prevout.n].nValue,
+        prevout, nTimeTx, nHashDrift, fCheck,
+        hashProofOfStake, fPrintProofOfStake, nHeight);
+}
+
+// Check kernel hash target and coinstake signature.
+//
+// The legacy kernel needs the *historical* stake coin (value + scriptPubKey)
+// and the *historical* containing-block header (hash + time).  pcoinsTip
+// reflects the tip-state UTXO set, not the parent-state of the block being
+// validated, so it cannot be used here: under headers-first the body of the
+// block being validated arrives ahead of chain connection, and the staked
+// coin may already have been re-spent at the tip.  We retain the original
+// GetTransaction-based historical lookup; the per-block disk read is bounded
+// by the legacy pre-fork height range and not on any performance-critical
+// modern path.
+//
+// We do, however, keep the ReadBlockFromDisk elimination: the containing
+// block's time and hash are taken from its CBlockIndex entry instead of
+// re-deserialising the full block.
 bool CheckProofOfStake(const CBlock& block, uint256& hashProofOfStake, int nHeight)
 {
     const CTransaction tx = block.vtx[1];
     if (!tx.IsCoinStake())
         return error("CheckProofOfStake() : called on non-coinstake %s", tx.GetHash().ToString().c_str());
 
-    // Kernel (input 0) must match the stake hash target per coin age (nBits)
     const CTxIn& txin = tx.vin[0];
 
-    // First try finding the previous transaction in database
+    // Historical lookup of the staked coin's source transaction.
     uint256 hashBlock;
     CTransaction txPrev;
     if (!GetTransaction(txin.prevout.hash, txPrev, hashBlock, true))
         return error("CheckProofOfStake() : INFO: read txPrev failed");
 
-    //verify signature and script
-    if (!VerifyScript(txin.scriptSig, txPrev.vout[txin.prevout.n].scriptPubKey, STANDARD_SCRIPT_VERIFY_FLAGS, TransactionSignatureChecker(&tx, 0)))
-        return error("CheckProofOfStake() : VerifySignature failed on coinstake %s", tx.GetHash().ToString().c_str());
+    if (txin.prevout.n >= txPrev.vout.size())
+        return error("CheckProofOfStake() : prevout %u out of range for tx %s",
+                     txin.prevout.n, txin.prevout.hash.ToString().c_str());
 
-    CBlockIndex* pindex = NULL;
+    // Verify the coinstake input signature against the historical scriptPubKey.
+    if (!VerifyScript(txin.scriptSig, txPrev.vout[txin.prevout.n].scriptPubKey,
+                      STANDARD_SCRIPT_VERIFY_FLAGS, TransactionSignatureChecker(&tx, 0)))
+        return error("CheckProofOfStake() : VerifySignature failed on coinstake %s",
+                     tx.GetHash().ToString().c_str());
+
+    // Locate the containing-block index entry.  hashBlock comes from
+    // GetTransaction and identifies the block that confirmed txPrev; this is
+    // stable across reorgs in a way chainActive[height] is not.
     BlockMap::iterator it = mapBlockIndex.find(hashBlock);
-    if (it != mapBlockIndex.end())
-        pindex = it->second;
-    else
-        return error("CheckProofOfStake() : read block failed");
-
-    // Read block header
-    CBlock blockprev;
-    if (!ReadBlockFromDisk(blockprev, pindex->GetBlockPos()))
-        return error("CheckProofOfStake(): INFO: failed to find block");
+    if (it == mapBlockIndex.end())
+        return error("CheckProofOfStake() : block %s not in index", hashBlock.ToString().c_str());
+    CBlockIndex* pindex = it->second;
 
     unsigned int nInterval = 0;
     unsigned int nTime = block.nTime;
-    if (!CheckStakeKernelHash(block.nBits, blockprev, txPrev, txin.prevout, nTime, nInterval, true, hashProofOfStake, fDebug, nHeight))
-        return error("CheckProofOfStake() : INFO: check kernel failed on coinstake %s, hashProof=%s \n", tx.GetHash().ToString().c_str(), hashProofOfStake.ToString().c_str()); // may occur during initial download or if behind on block chain sync
+    if (!CheckStakeKernelHashImpl(block.nBits,
+                                  pindex->GetBlockHash(),
+                                  (unsigned int)pindex->GetBlockTime(),
+                                  txPrev.vout[txin.prevout.n].nValue,
+                                  txin.prevout, nTime, nInterval, true,
+                                  hashProofOfStake, fDebug, nHeight))
+        return error("CheckProofOfStake() : INFO: check kernel failed on coinstake %s, hashProof=%s\n",
+                     tx.GetHash().ToString().c_str(), hashProofOfStake.ToString().c_str());
 
     return true;
 }

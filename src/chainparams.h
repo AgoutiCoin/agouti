@@ -102,6 +102,11 @@ public:
     int ModifierUpgradeBlock() const { return nModifierUpdateBlock; }
     int LAST_POW_BLOCK() const { return nLastPOWBlock; }
 
+    /** Default block hash whose ancestors are assumed valid (can be overridden by -assumevalid). */
+    const uint256& AssumeValidHash() const { return hashAssumeValidDefault; }
+    /** Minimum cumulative chainwork required before assumevalid script-skipping is permitted. */
+    const uint256& AssumeValidMinimumChainWork() const { return nMinimumChainWorkDefault; }
+
     /** Minimum coin age (seconds) before a UTXO is eligible to stake **/
     unsigned int StakeMinAge() const { return nStakeMinAge; }
 
@@ -154,6 +159,8 @@ protected:
     int nRequiredAccumulation;
     int64_t nBudget_Fee_Confirmations;
 
+    uint256 hashAssumeValidDefault;
+    uint256 nMinimumChainWorkDefault;
     unsigned int nStakeMinAge;
 
     // StakePointer parameters

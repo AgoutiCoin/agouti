@@ -35,6 +35,7 @@
 
 
 #include <sstream>
+#include <limits>
 
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/filesystem.hpp>
@@ -60,12 +61,19 @@ using namespace std;
 CCriticalSection cs_main;
 
 BlockMap mapBlockIndex;
+// Cache/metadata of validated PoS kernel hashes, keyed by block hash.  Legacy
+// PoS may use this to skip duplicate kernel checks; v5 StakePointer never does
+// because its non-header fields are not committed by block hash.
+// Populated only after a successful CheckWork() pass and bounded below.
+static const size_t MAX_MAPPROOFOFSTAKE_ENTRIES = 65536;
 map<uint256, uint256> mapProofOfStake;
 map<uint256, uint256> mapUsedStakePointers; // pointer hash → consuming block hash
 set<pair<COutPoint, unsigned int> > setStakeSeen;
 map<unsigned int, unsigned int> mapHashedBlocks;
 CChain chainActive;
 CBlockIndex* pindexBestHeader = NULL;
+uint256 hashAssumeValid;
+uint256 nMinimumChainWork;
 int64_t nTimeBestReceived = 0;
 CWaitableCriticalSection csBestBlock;
 CConditionVariable cvBlockChange;
@@ -2130,6 +2138,21 @@ static int64_t nTimeIndex = 0;
 static int64_t nTimeCallbacks = 0;
 static int64_t nTimeTotal = 0;
 
+static int64_t GetBlockProofEquivalentTimeForAssumeValid(const CBlockIndex& to, const CBlockIndex& from, const CBlockIndex& tip)
+{
+    const uint256 work = (to.nChainWork > from.nChainWork) ? (to.nChainWork - from.nChainWork) : (from.nChainWork - to.nChainWork);
+    const double tipProof = GetBlockProof(tip).getdouble();
+    if (tipProof <= 0.0)
+        return std::numeric_limits<int64_t>::max();
+
+    const double seconds = work.getdouble() * Params().TargetSpacing() / tipProof;
+    if (seconds >= (double)std::numeric_limits<int64_t>::max())
+        return std::numeric_limits<int64_t>::max();
+
+    const int64_t result = (int64_t)seconds;
+    return (to.nChainWork > from.nChainWork) ? result : -result;
+}
+
 bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pindex, CCoinsViewCache& view, bool fJustCheck)
 {
     AssertLockHeld(cs_main);
@@ -2158,7 +2181,30 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
         return state.DoS(100, error("ConnectBlock() : PoW period ended"),
             REJECT_INVALID, "PoW-ended");
 
-    bool fScriptChecks = pindex->nHeight >= Checkpoints::GetTotalBlocksEstimate();
+    // Default: validate all scripts.
+    // If the block is an ancestor of hashAssumeValid and the chain has
+    // accumulated sufficient work, skip historical ECDSA verification.
+    // PoS kernel, coinstake signatures, and all consensus checks are
+    // never affected by this gate.
+    bool fScriptChecks = true;
+    if (!hashAssumeValid.IsNull()) {
+        BlockMap::const_iterator it = mapBlockIndex.find(hashAssumeValid);
+        if (it != mapBlockIndex.end()) {
+            const CBlockIndex* pindexAssume = it->second;
+            const CBlockIndex* pindexAssumeAncestor = (pindexAssume->nHeight >= pindex->nHeight) ?
+                pindexAssume->GetAncestor(pindex->nHeight) : NULL;
+            const CBlockIndex* pindexBestHeaderAncestor = (pindexBestHeader && pindexBestHeader->nHeight >= pindex->nHeight) ?
+                pindexBestHeader->GetAncestor(pindex->nHeight) : NULL;
+            if (pindexAssumeAncestor == pindex &&
+                pindexBestHeaderAncestor == pindex &&
+                pindexBestHeader->nChainWork >= nMinimumChainWork) {
+                // Keep recent history fully script-verified even when assumevalid is active.
+                // This mirrors the upstream anti-extortion guard: a freshly buried invalid
+                // script chain should not become acceptable merely by operator configuration.
+                fScriptChecks = (GetBlockProofEquivalentTimeForAssumeValid(*pindexBestHeader, *pindex, *pindexBestHeader) <= 60 * 60 * 24 * 7 * 2);
+            }
+        }
+    }
 
     // Do not allow blocks that contain transactions which 'overwrite' older transactions,
     // unless those are already completely spent.
@@ -2992,21 +3038,26 @@ CBlockIndex* AddToBlockIndex(const CBlock& block)
             LogPrintf("AddToBlockIndex() : SetStakeEntropyBit() failed \n");
 
         // ppcoin: record proof-of-stake hash value
+        // For header-only blocks the body has not arrived yet, mapProofOfStake
+        // has no entry, and hashProofOfStake remains null until CheckWork runs
+        // at body-arrival time.  Only emit the diagnostic when we actually have
+        // the body in hand (block.vtx contains the coinstake).
         if (pindexNew->IsProofOfStake()) {
-            if (!mapProofOfStake.count(hash))
-                LogPrintf("AddToBlockIndex() : hashProofOfStake not found in map \n");
-            pindexNew->hashProofOfStake = mapProofOfStake[hash];
+            if (!mapProofOfStake.count(hash)) {
+                if (block.vtx.size() > 1)
+                    LogPrintf("AddToBlockIndex() : hashProofOfStake not found in map \n");
+            } else {
+                pindexNew->hashProofOfStake = mapProofOfStake[hash];
+            }
         }
 
-        // ppcoin: compute stake modifier
-        uint64_t nStakeModifier = 0;
-        bool fGeneratedStakeModifier = false;
-        if (!ComputeNextStakeModifier(pindexNew->pprev, nStakeModifier, fGeneratedStakeModifier))
-            LogPrintf("AddToBlockIndex() : ComputeNextStakeModifier() failed \n");
-        pindexNew->SetStakeModifier(nStakeModifier, fGeneratedStakeModifier);
-        pindexNew->nStakeModifierChecksum = GetStakeModifierChecksum(pindexNew);
-        if (!CheckStakeModifierCheckpoints(pindexNew->nHeight, pindexNew->nStakeModifierChecksum))
-            LogPrintf("AddToBlockIndex() : Rejected by stake modifier checkpoint height=%d, modifier=%s \n", pindexNew->nHeight, boost::lexical_cast<std::string>(nStakeModifier));
+        // ppcoin: stake modifier computation is deferred to body arrival.
+        // Computing here would read GetStakeEntropyBit() from ancestors whose
+        // PoS flag has not yet been resolved under headers-first sync, so the
+        // modifier and its checkpoint checksum would be derived from a chain
+        // whose PoS classification is still incomplete.  See
+        // ReceivedBlockTransactions() for the deferred path that runs only
+        // once every ancestor body is in (pprev->nChainTx is set).
     }
     pindexNew->nChainWork = (pindexNew->pprev ? pindexNew->pprev->nChainWork : 0) + GetBlockProof(*pindexNew);
     pindexNew->RaiseValidity(BLOCK_VALID_TREE);
@@ -3025,8 +3076,23 @@ CBlockIndex* AddToBlockIndex(const CBlock& block)
 /** Mark a block as having its data received and checked (up to BLOCK_VALID_TRANSACTIONS). */
 bool ReceivedBlockTransactions(const CBlock& block, CValidationState& state, CBlockIndex* pindexNew, const CDiskBlockPos& pos)
 {
-    if (block.IsProofOfStake())
+    if (block.IsProofOfStake()) {
         pindexNew->SetProofOfStake();
+
+        // During headers-first sync the CBlockIndex was created from a header-only
+        // CBlock (empty vtx), so block.IsProofOfStake() was false at that point.
+        // Correct the fields that could not be derived from the header alone.
+        if (block.vtx.size() > 1) {
+            pindexNew->prevoutStake = block.GetProofOfStake().first;
+            pindexNew->nStakeTime   = block.nTime;
+            if (!setStakeSeen.count(std::make_pair(pindexNew->prevoutStake, pindexNew->nStakeTime)))
+                setStakeSeen.insert(std::make_pair(pindexNew->prevoutStake, pindexNew->nStakeTime));
+        }
+
+        if (pindexNew->hashProofOfStake.IsNull() && mapProofOfStake.count(block.GetHash()))
+            pindexNew->hashProofOfStake = mapProofOfStake[block.GetHash()];
+    }
+
     pindexNew->nTx = block.vtx.size();
     pindexNew->nChainTx = 0;
     pindexNew->nFile = pos.nFile;
@@ -3050,6 +3116,39 @@ bool ReceivedBlockTransactions(const CBlock& block, CValidationState& state, CBl
                 LOCK(cs_nBlockSequenceId);
                 pindex->nSequenceId = nBlockSequenceId++;
             }
+
+            // Finalise the stake modifier now that every ancestor has its body
+            // (and therefore the correct PoS flag and entropy bit).  Computing
+            // the modifier here — in genesis-to-tip order — guarantees
+            // ComputeNextStakeModifier sees a consistent PoS classification of
+            // its selection window, which is not the case during header-only
+            // acceptance under headers-first sync.  The recomputation is
+            // idempotent: ComputeNextStakeModifier is a pure function of
+            // pprev's chain state.
+            if (pindex->pprev) {
+                uint64_t nStakeModifier = 0;
+                bool fGeneratedStakeModifier = false;
+                if (!ComputeNextStakeModifier(pindex->pprev, nStakeModifier, fGeneratedStakeModifier))
+                    LogPrintf("ReceivedBlockTransactions() : ComputeNextStakeModifier failed at height %d\n", pindex->nHeight);
+                pindex->nFlags &= ~CBlockIndex::BLOCK_STAKE_MODIFIER;
+                pindex->SetStakeModifier(nStakeModifier, fGeneratedStakeModifier);
+                pindex->nStakeModifierChecksum = GetStakeModifierChecksum(pindex);
+                setDirtyBlockIndex.insert(pindex);
+
+                // Hardcoded stake-modifier checksum checkpoint — a mismatch
+                // means we have diverged from the known-good modifier chain
+                // for that height and the block (and any descendants flowing
+                // through it) must be rejected.
+                if (!CheckStakeModifierCheckpoints(pindex->nHeight, pindex->nStakeModifierChecksum)) {
+                    LogPrintf("ReceivedBlockTransactions() : rejected by stake-modifier checkpoint at height=%d, modifier=%s\n",
+                              pindex->nHeight, boost::lexical_cast<std::string>(nStakeModifier));
+                    pindex->nStatus |= BLOCK_FAILED_VALID;
+                    setDirtyBlockIndex.insert(pindex);
+                    // Skip candidate insertion + descendant propagation for this branch.
+                    continue;
+                }
+            }
+
             if (chainActive.Tip() == NULL || !setBlockIndexCandidates.value_comp()(pindex, chainActive.Tip())) {
                 setBlockIndexCandidates.insert(pindex);
             }
@@ -3342,10 +3441,39 @@ static uint256 StakePointerHash(const COutPoint& outpoint)
     return Hash(ss.begin(), ss.end());
 }
 
-bool IsStakePointerUsed(const CBlockIndex* /*pindex*/, const COutPoint& outpointPointer)
+bool IsStakePointerUsed(const CBlockIndex* pindexPrev, const COutPoint& outpointPointer)
 {
-    uint256 h = StakePointerHash(outpointPointer);
-    return mapUsedStakePointers.count(h) > 0;
+    AssertLockHeld(cs_main);
+
+    if (!pindexPrev)
+        return false;
+
+    const int nStopHeight = std::max(Params().StakePointerForkHeight(),
+                                    pindexPrev->nHeight - Params().ValidStakePointerDuration() + 1);
+    const CBlockIndex* pindex = pindexPrev;
+    while (pindex && pindex->nHeight >= nStopHeight) {
+        if (pindex->IsProofOfStake() && pindex->nVersion >= 5) {
+            if (pindex->prevoutStake == outpointPointer)
+                return true;
+
+            // Older on-disk indexes may not have prevoutStake populated for v5
+            // blocks because the stake pointer lives outside the header. Fall
+            // back to the block body for branch-relative correctness.
+            if (pindex->prevoutStake.IsNull() && (pindex->nStatus & BLOCK_HAVE_DATA)) {
+                CBlock block;
+                if (ReadBlockFromDisk(block, pindex) &&
+                    block.IsProofOfStake() &&
+                    block.nVersion >= 5 &&
+                    !block.stakePointer.IsNull() &&
+                    COutPoint(block.stakePointer.txid, block.stakePointer.nPos) == outpointPointer) {
+                    return true;
+                }
+            }
+        }
+        pindex = pindex->pprev;
+    }
+
+    return false;
 }
 
 // Validate the stakePointer embedded in a version-5 PoS block.
@@ -3521,13 +3649,19 @@ bool CheckWork(const CBlock& block, CBlockIndex* const pindexPrev)
     if (block.IsProofOfStake()) {
         uint256 hashProofOfStake;
         uint256 hash = block.GetHash();
-
         int nHeight = pindexPrev->nHeight + 1;
+        const bool fStakePointerKernel = nHeight >= Params().StakePointerForkHeight();
+
+        // Only legacy PoS can use the block hash as a validation cache key.
+        // v5 StakePointer fields and the v5 block signature are outside the
+        // header hash, so a v5 cache hit must never skip CheckStake().
+        if (!fStakePointerKernel && mapProofOfStake.count(hash))
+            return true;
 
         // The StakePointer fork switches all PoS validation to the new kernel
         // from the fork height onward. CheckStake() then enforces the v5 block
         // version, v5 coinstake form, and non-null stake pointer.
-        if (nHeight >= Params().StakePointerForkHeight()) {
+        if (fStakePointerKernel) {
             if (!CheckStake(pindexPrev, block, hashProofOfStake)) {
                 LogPrintf("WARNING: CheckWork(): StakePointer check failed for block %s\n",
                           hash.ToString().c_str());
@@ -3542,8 +3676,17 @@ bool CheckWork(const CBlock& block, CBlockIndex* const pindexPrev)
             }
         }
 
-        if (!mapProofOfStake.count(hash))
+        if (!mapProofOfStake.count(hash)) {
+            // Bounded cache: a miss just causes a re-validation, so random
+            // eviction is sufficient and resists targeted thrashing. For v5
+            // this map is metadata only: hits never skip CheckStake().
+            if (mapProofOfStake.size() >= MAX_MAPPROOFOFSTAKE_ENTRIES) {
+                map<uint256, uint256>::iterator it = mapProofOfStake.begin();
+                std::advance(it, GetRand(mapProofOfStake.size()));
+                mapProofOfStake.erase(it);
+            }
             mapProofOfStake.insert(make_pair(hash, hashProofOfStake));
+        }
     }
 
     return true;
@@ -3832,10 +3975,12 @@ bool ProcessNewBlock(CValidationState& state, CNode* pfrom, CBlock* pblock, CDis
     {
         LOCK(cs_main);   // Replaces the former TRY_LOCK loop because busy waiting wastes too much resources
 
-        // Reject duplicate proof-of-stake under cs_main to avoid a data race:
-        // setStakeSeen and mapBlockIndex are mutated under cs_main elsewhere;
-        // reading them before acquiring the lock is UB on concurrent inserts.
-        if (pblock->IsProofOfStake() && setStakeSeen.count(pblock->GetProofOfStake()) && !mapBlockIndex.count(pblock->GetHash()))
+        // Reject duplicate proof-of-stake under cs_main to avoid a data race.
+        // Header-known blocks still need the duplicate check until their body
+        // has been accepted; mapBlockIndex membership alone is not enough.
+        BlockMap::const_iterator miSelf = mapBlockIndex.find(pblock->GetHash());
+        const bool fHaveBlockData = miSelf != mapBlockIndex.end() && (miSelf->second->nStatus & BLOCK_HAVE_DATA);
+        if (pblock->IsProofOfStake() && setStakeSeen.count(pblock->GetProofOfStake()) && !fHaveBlockData)
             return error("ProcessNewBlock() : duplicate proof-of-stake (%s, %d) for block %s", pblock->GetProofOfStake().first.ToString().c_str(), pblock->GetProofOfStake().second, pblock->GetHash().ToString().c_str());
 
         // mapBlockIndex is protected by cs_main; this lookup must be inside the lock.
@@ -5017,7 +5162,8 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
         else
             pfrom->fRelayTxes = true;
 
-        if (chainActive.Height() >= Params().StakePointerForkHeight() && pfrom->nVersion < MIN_MNIP_UPDATE_PROTO_VERSION) {
+        if (chainActive.Height() >= Params().StakePointerForkHeight() &&
+            pfrom->nVersion < MIN_PEER_PROTO_VERSION_VETO_FORK) {
             LogPrintf("disconnecting from legacy version after fork (peer %d)\n", pfrom->id);
             pfrom->fDisconnect = true;
             return true;
@@ -5215,9 +5361,29 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
             if (inv.type == MSG_BLOCK) {
                 UpdateBlockAvailability(pfrom->GetId(), inv.hash);
                 if (!fAlreadyHave && !fImporting && !fReindex && !mapBlocksInFlight.count(inv.hash)) {
-                    // Add this to the list of blocks to request
-                    vToFetch.push_back(inv);
-                    LogPrint("net", "getblocks (%d) %s to peer=%d\n", pindexBestHeader->nHeight, inv.hash.ToString(), pfrom->id);
+                    if (Params().HeadersFirstSyncingActive() && IsInitialBlockDownload()) {
+                        // In headers-first IBD, block bodies are scheduled by
+                        // FindNextBlocksToDownload once the header chain is established.
+                        // An unknown block inv is the peer telling us our header chain is
+                        // stale; request headers immediately instead of waiting for the
+                        // one-shot initial getheaders path.  Mainnet still has older
+                        // peers that do not reliably serve headers, so also keep the
+                        // legacy getdata fallback for unknown block hashes. Ordered
+                        // getblocks inventory can then advance from the active tip
+                        // without weakening consensus: AcceptBlock still performs the
+                        // full block/header/context checks before connection.
+                        if (!mapBlockIndex.count(inv.hash)) {
+                            pfrom->PushMessage("getheaders", chainActive.GetLocator(), inv.hash);
+                            vToFetch.push_back(inv);
+                            LogPrint("net", "headers-first: requested headers for announced block %s peer=%d\n",
+                                     inv.hash.ToString(), pfrom->id);
+                        } else {
+                            LogPrint("net", "headers-first: deferring body fetch %s peer=%d\n", inv.hash.ToString(), pfrom->id);
+                        }
+                    } else {
+                        vToFetch.push_back(inv);
+                        LogPrint("net", "getblocks (%d) %s to peer=%d\n", pindexBestHeader->nHeight, inv.hash.ToString(), pfrom->id);
+                    }
                 }
             }
 
@@ -5254,7 +5420,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
     }
 
 
-    else if (strCommand == "getblocks" || strCommand == "getheaders") {
+    else if (strCommand == "getblocks") {
         CBlockLocator locator;
         uint256 hashStop;
         vRecv >> locator >> hashStop;
@@ -5286,15 +5452,15 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
     }
 
 
-    else if (strCommand == "headers" && Params().HeadersFirstSyncingActive()) {
+    // Serve a range of headers to the requesting peer.
+    // Full PoS validation is never performed on headers alone — that is
+    // deferred to AcceptBlock when bodies arrive.
+    else if (strCommand == "getheaders") {
         CBlockLocator locator;
         uint256 hashStop;
         vRecv >> locator >> hashStop;
 
         LOCK(cs_main);
-
-        if (IsInitialBlockDownload())
-            return true;
 
         CBlockIndex* pindex = NULL;
         if (locator.IsNull()) {
@@ -5310,7 +5476,8 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
                 pindex = chainActive.Next(pindex);
         }
 
-        // we must use CBlocks, as CBlockHeaders won't include the 0x00 nTx count at the end
+        // CBlocks must be used here: CBlockHeader serialisation omits the trailing
+        // varint(0) tx-count that the wire protocol requires in a "headers" message.
         vector<CBlock> vHeaders;
         int nLimit = MAX_HEADERS_RESULTS;
         LogPrint("net", "getheaders %d to %s from peer=%d\n", (pindex ? pindex->nHeight : -1), hashStop.ToString(), pfrom->id);
@@ -5472,11 +5639,15 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
     }
 
 
-    else if (strCommand == "headers" && Params().HeadersFirstSyncingActive() && !fImporting && !fReindex) // Ignore headers received while importing
+    // Incoming "headers" response: a batch of block headers from a peer.
+    // AcceptBlockHeader only validates header linkage, difficulty, and timestamps.
+    // Full PoS stake-kernel / coinstake verification is deferred to AcceptBlock
+    // when the block body arrives — headers carry no stake proof data.
+    else if (strCommand == "headers" && !fImporting && !fReindex)
     {
         std::vector<CBlockHeader> headers;
 
-        // Bypass the normal CBlock deserialization, as we don't want to risk deserializing 2000 full blocks.
+        // Bypass the normal CBlock deserialization, as we don't want to risk deserialising 2000 full blocks.
         unsigned int nCount = ReadCompactSize(vRecv);
         if (nCount > MAX_HEADERS_RESULTS) {
             Misbehaving(pfrom->GetId(), 20);
@@ -5485,13 +5656,13 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
         headers.resize(nCount);
         for (unsigned int n = 0; n < nCount; n++) {
             vRecv >> headers[n];
-            ReadCompactSize(vRecv); // ignore tx count; assume it is 0.
+            ReadCompactSize(vRecv); // discard varint(0) tx-count appended by sender
         }
 
         LOCK(cs_main);
 
         if (nCount == 0) {
-            // Nothing interesting. Stop asking this peers for more headers.
+            // Nothing interesting. Stop asking this peer for more headers.
             return true;
         }
         CBlockIndex* pindexLast = NULL;
@@ -5502,10 +5673,10 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
                 return error("non-continuous headers sequence");
             }
 
-            /*TODO: this has a CBlock cast on it so that it will compile. There should be a solution for this
-             * before headers are reimplemented on mainnet
-             */
-            if (!AcceptBlockHeader((CBlock)header, state, &pindexLast)) {
+            // AcceptBlockHeader requires CBlock& (for GetHash / CheckBlockHeader).
+            // CBlock(CBlockHeader) leaves vtx empty — that is intentional here: we
+            // are processing headers only.  Full block data arrives via "block" messages.
+            if (!AcceptBlockHeader(CBlock(header), state, &pindexLast)) {
                 int nDoS;
                 if (state.IsInvalid(nDoS)) {
                     if (nDoS > 0)
@@ -5520,9 +5691,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
             UpdateBlockAvailability(pfrom->GetId(), pindexLast->GetBlockHash());
 
         if (nCount == MAX_HEADERS_RESULTS && pindexLast) {
-            // Headers message had its maximum size; the peer may have more headers.
-            // TODO: optimize: if pindexLast is an ancestor of chainActive.Tip or pindexBestHeader, continue
-            // from there instead.
+            // Batch was full; peer likely has more headers.
             LogPrint("net", "more getheaders (%d) to end to peer=%d (startheight:%d)\n", pindexLast->nHeight, pfrom->id, pfrom->nStartingHeight);
             pfrom->PushMessage("getheaders", chainActive.GetLocator(pindexLast), uint256(0));
         }
@@ -5538,37 +5707,44 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
         CInv inv(MSG_BLOCK, hashBlock);
         LogPrint("net", "received block %s peer=%d\n", inv.hash.ToString(), pfrom->id);
 
-        //sometimes we will be sent their most recent block and its not the one we want, in that case tell where we are
-        if (!mapBlockIndex.count(block.hashPrevBlock)) {
-            if (find(pfrom->vBlockRequested.begin(), pfrom->vBlockRequested.end(), hashBlock) != pfrom->vBlockRequested.end()) {
-                //we already asked for this block, so lets work backwards and ask for the previous block
-                pfrom->PushMessage("getblocks", chainActive.GetLocator(), block.hashPrevBlock);
-                pfrom->vBlockRequested.push_back(block.hashPrevBlock);
+        bool fParentKnown = false;
+        {
+            LOCK(cs_main);
+            fParentKnown = (hashBlock == Params().HashGenesisBlock()) || mapBlockIndex.count(block.hashPrevBlock);
+        }
+
+        // Parent block not yet in our index.
+        if (!fParentKnown) {
+            if (Params().HeadersFirstSyncingActive()) {
+                // In headers-first mode the header chain should always precede body
+                // download.  An unknown parent means a gap in our header chain;
+                // request headers up to the missing parent to fill it.
+                pfrom->PushMessage("getheaders", chainActive.GetLocator(), block.hashPrevBlock);
             } else {
-                //ask to sync to this block
-                pfrom->PushMessage("getblocks", chainActive.GetLocator(), hashBlock);
-                pfrom->vBlockRequested.push_back(hashBlock);
+                if (find(pfrom->vBlockRequested.begin(), pfrom->vBlockRequested.end(), hashBlock) != pfrom->vBlockRequested.end()) {
+                    pfrom->PushMessage("getblocks", chainActive.GetLocator(), block.hashPrevBlock);
+                    pfrom->vBlockRequested.push_back(block.hashPrevBlock);
+                } else {
+                    pfrom->PushMessage("getblocks", chainActive.GetLocator(), hashBlock);
+                    pfrom->vBlockRequested.push_back(hashBlock);
+                }
             }
         } else {
             pfrom->AddInventoryKnown(inv);
 
             CValidationState state;
-            if (!mapBlockIndex.count(block.GetHash())) {
-                ProcessNewBlock(state, pfrom, &block);
-                int nDoS;
-                if(state.IsInvalid(nDoS)) {
-                    pfrom->PushMessage("reject", strCommand, state.GetRejectCode(),
-                                       state.GetRejectReason().substr(0, MAX_REJECT_MESSAGE_LENGTH), inv.hash);
-                    if(nDoS > 0) {
-                        TRY_LOCK(cs_main, lockMain);
-                        if(lockMain) Misbehaving(pfrom->GetId(), nDoS);
-                    }
+            ProcessNewBlock(state, pfrom, &block);
+            int nDoS;
+            if(state.IsInvalid(nDoS)) {
+                pfrom->PushMessage("reject", strCommand, state.GetRejectCode(),
+                                   state.GetRejectReason().substr(0, MAX_REJECT_MESSAGE_LENGTH), inv.hash);
+                if(nDoS > 0) {
+                    TRY_LOCK(cs_main, lockMain);
+                    if(lockMain) Misbehaving(pfrom->GetId(), nDoS);
                 }
-                //disconnect this node if its old protocol version
-                pfrom->DisconnectOldProtocol(ActiveProtocol(), strCommand);
-            } else {
-                LogPrint("net", "%s : Already processed block %s, skipping ProcessNewBlock()\n", __func__, block.GetHash().GetHex());
             }
+            //disconnect this node if its old protocol version
+            pfrom->DisconnectOldProtocol(ActiveProtocol(), strCommand);
         }
     }
 
@@ -6036,14 +6212,24 @@ bool SendMessages(CNode* pto, bool fSendTrickle)
             pindexBestHeader = chainActive.Tip();
         bool fFetch = state.fPreferredDownload || (nPreferredDownload == 0 && !pto->fClient && !pto->fOneShot); // Download if this is a nice peer, or we have no nice peers and this one might do.
         if (!state.fSyncStarted && !pto->fClient && fFetch /*&& !fImporting*/ && !fReindex) {
-            // Only actively request headers from a single peer, unless we're close to end of initial download.
-            if (nSyncStarted == 0 || pindexBestHeader->GetBlockTime() > GetAdjustedTime() - 6 * 60 * 60) { // NOTE: was "close to today" and 24h in Bitcoin
+            // Prefer one active headers peer, but while behind peers that advertise
+            // a higher starting height, do not let one non-responsive peer block
+            // synchronization.
+            if (nSyncStarted == 0 || pindexBestHeader->GetBlockTime() > GetAdjustedTime() - 6 * 60 * 60 ||
+                pto->nStartingHeight > chainActive.Height()) { // NOTE: was "close to today" and 24h in Bitcoin
                 state.fSyncStarted = true;
                 nSyncStarted++;
-                //CBlockIndex *pindexStart = pindexBestHeader->pprev ? pindexBestHeader->pprev : pindexBestHeader;
-                //LogPrint("net", "initial getheaders (%d) to peer=%d (startheight:%d)\n", pindexStart->nHeight, pto->id, pto->nStartingHeight);
-                //pto->PushMessage("getheaders", chainActive.GetLocator(pindexStart), uint256(0));
-                pto->PushMessage("getblocks", chainActive.GetLocator(chainActive.Tip()), uint256(0));
+                CBlockIndex* pindexStart = pindexBestHeader;
+                if (pindexStart == NULL || chainActive.FindFork(pindexStart) != chainActive.Tip())
+                    pindexStart = chainActive.Tip();
+                LogPrint("net", "initial getheaders (%d) to peer=%d (startheight:%d)\n", pindexStart->nHeight, pto->id, pto->nStartingHeight);
+                pto->PushMessage("getheaders", chainActive.GetLocator(pindexStart), uint256(0));
+                if (Params().HeadersFirstSyncingActive() && IsInitialBlockDownload() &&
+                    pto->nStartingHeight > chainActive.Height()) {
+                    LogPrint("net", "initial getblocks fallback (%d) to peer=%d (startheight:%d)\n",
+                             chainActive.Height(), pto->id, pto->nStartingHeight);
+                    pto->PushMessage("getblocks", chainActive.GetLocator(), uint256(0));
+                }
             }
         }
 

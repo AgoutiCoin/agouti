@@ -638,7 +638,6 @@ bool CBudgetManager::IsTransactionValid(const CTransaction& txNew, int nBlockHei
     LOCK(cs);
 
     int nHighestCount = 0;
-    int nFivePercent = mnodeman.CountEnabled(ActiveProtocol()) / 20;
     std::vector<CFinalizedBudget*> ret;
 
     // ------- Grab The Highest Count
@@ -657,6 +656,13 @@ bool CBudgetManager::IsTransactionValid(const CTransaction& txNew, int nBlockHei
         ++it;
     }
 
+    if (nHighestCount == 0)
+        return false;
+
+    const int nMasternodeCount = mnodeman.CountEnabled(ActiveProtocol());
+    const int nFivePercent = nMasternodeCount / 20;
+    const int nTenPercent = nMasternodeCount / 10;
+
     LogPrint("masternode","CBudgetManager::IsTransactionValid() - nHighestCount: %lli, 5%% of Masternodes: %lli mapFinalizedBudgets.size(): %ld\n", 
               nHighestCount, nFivePercent, mapFinalizedBudgets.size());
     /*
@@ -670,7 +676,7 @@ bool CBudgetManager::IsTransactionValid(const CTransaction& txNew, int nBlockHei
     while (it != mapFinalizedBudgets.end()) {
         CFinalizedBudget* pfinalizedBudget = &((*it).second);
 
-        if (pfinalizedBudget->GetVoteCount() > nHighestCount - mnodeman.CountEnabled(ActiveProtocol()) / 10 &&
+        if (pfinalizedBudget->GetVoteCount() > nHighestCount - nTenPercent &&
             pfinalizedBudget->fValid) {
             if (nBlockHeight >= pfinalizedBudget->GetBlockStart() && nBlockHeight <= pfinalizedBudget->GetBlockEnd()) {
                 if (FinalizedBudgetPaymentVetoedNoLock(*pfinalizedBudget, nBlockHeight))
@@ -1589,11 +1595,11 @@ bool CBudgetManager::IsVetoedNoLock(const uint256& nProposalHash, int nHeight) c
 
 bool CBudgetManager::FinalizedBudgetPaymentVetoedNoLock(CFinalizedBudget& finalizedBudget, int nBlockHeight) const
 {
-    CTxBudgetPayment payment;
-    if (!finalizedBudget.GetBudgetPaymentByBlock(nBlockHeight, payment))
+    const int nPaymentIndex = nBlockHeight - finalizedBudget.GetBlockStart();
+    if (nPaymentIndex < 0 || nPaymentIndex > (int)finalizedBudget.vecBudgetPayments.size() - 1)
         return false;
 
-    return IsVetoedNoLock(payment.nProposalHash, nBlockHeight);
+    return IsVetoedNoLock(finalizedBudget.vecBudgetPayments[nPaymentIndex].nProposalHash, nBlockHeight);
 }
 
 bool CBudgetManager::HasVetoVoteForProposal(const uint256& nProposalHash)

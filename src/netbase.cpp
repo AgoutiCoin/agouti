@@ -453,6 +453,22 @@ bool static ConnectSocketDirectly(const CService& addrConnect, SOCKET& hSocketRe
         return false;
     }
 
+    if (!GetBoolArg("-allowprivatenet", false) && ((struct sockaddr*)&sockaddr)->sa_family == AF_INET) {
+        const struct sockaddr_in* paddr = (const struct sockaddr_in*)&sockaddr;
+        const uint32_t ip = ntohl(paddr->sin_addr.s_addr);
+        const bool fPrivate =
+            ((ip >> 24) == 10) ||
+            ((ip >> 20) == 0xAC1) ||
+            ((ip >> 16) == 0xC0A8) ||
+            ((ip >> 24) == 127) ||
+            ((ip >> 16) == 0xA9FE) ||
+            ((ip >> 22) == 0x0191);
+        if (fPrivate) {
+            LogPrintf("Skipping non-routable peer connection %s\n", addrConnect.ToStringIPPort());
+            return false;
+        }
+    }
+
     SOCKET hSocket = socket(((struct sockaddr*)&sockaddr)->sa_family, SOCK_STREAM, IPPROTO_TCP);
     if (hSocket == INVALID_SOCKET)
         return false;
@@ -625,6 +641,10 @@ bool ConnectSocketByName(CService& addr, SOCKET& hSocketRet, const char* pszDest
 
     CService addrResolved(CNetAddr(strDest, fNameLookup && !HaveNameProxy()), port);
     if (addrResolved.IsValid()) {
+        if (!addrResolved.IsRoutable()) {
+            LogPrintf("Skipping non-routable peer destination %s resolved to %s\n", pszDest, addrResolved.ToStringIPPort());
+            return false;
+        }
         addr = addrResolved;
         return ConnectSocket(addr, hSocketRet, nTimeout);
     }

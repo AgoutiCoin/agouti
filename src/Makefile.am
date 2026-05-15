@@ -88,6 +88,8 @@ BITCOIN_CORE_H = \
   chainparamsseeds.h \
   checkpoints.h \
   checkqueue.h \
+  cuckoocache.h \
+  fastrange.h \
   clientversion.h \
   coincontrol.h \
   coins.h \

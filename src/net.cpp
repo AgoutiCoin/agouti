@@ -1181,6 +1181,8 @@ void ThreadDNSAddressSeed()
             vector<CAddress> vAdd;
             if (LookupHost(seed.host.c_str(), vIPs)) {
                 BOOST_FOREACH (CNetAddr& ip, vIPs) {
+                    if (!ip.IsRoutable())
+                        continue;
                     int nOneDay = 24 * 3600;
                     CAddress addr = CAddress(CService(ip, Params().GetDefaultPort()));
                     addr.nTime = GetTime() - 3 * nOneDay - GetRand(4 * nOneDay); // use a random age between 3 and 7 days old
@@ -1217,6 +1219,22 @@ void static ProcessOneShot()
         strDest = vOneShots.front();
         vOneShots.pop_front();
     }
+
+    std::vector<CService> vResolved;
+    if (Lookup(strDest.c_str(), vResolved, Params().GetDefaultPort(), false, 0) && !vResolved.empty()) {
+        bool fAnyRoutable = false;
+        BOOST_FOREACH (const CService& addr, vResolved) {
+            if (addr.IsRoutable()) {
+                fAnyRoutable = true;
+                break;
+            }
+        }
+        if (!fAnyRoutable) {
+            LogPrintf("Skipping non-routable one-shot peer %s\n", strDest);
+            return;
+        }
+    }
+
     CAddress addr;
     CSemaphoreGrant grant(*semOutbound, true);
     if (grant) {
@@ -1230,7 +1248,7 @@ OutboundConnectionAttempt GetOutboundConnectionAttempt(const CAddress& addr, boo
     if (!addr.IsValid() || nTries > OUTBOUND_MAX_SELECTION_TRIES)
         return OUTBOUND_CONNECTION_STOP;
 
-    if (fConnectedGroup || IsLocal(addr) || IsLimited(addr))
+    if (fConnectedGroup || !addr.IsRoutable() || IsLimited(addr))
         return OUTBOUND_CONNECTION_SKIP;
 
     // only consider very recently tried nodes after a few failed attempts
