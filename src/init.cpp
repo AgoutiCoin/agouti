@@ -210,10 +210,13 @@ void PrepareShutdown()
     {
         LOCK(cs_main);
         if (pcoinsTip != NULL) {
-            FlushStateToDisk();
-
-            //record that client took the proper shutdown procedure
-            pblocktree->WriteFlag("shutdown", true);
+            uint64_t nFree = boost::filesystem::space(GetDataDir()).available;
+            if (nFree >= nMinDiskSpace) {
+                FlushStateToDisk();
+                pblocktree->WriteFlag("shutdown", true);
+            } else {
+                LogPrintf("%s: skipping state flush — disk full (%" PRId64 " bytes free)\n", __func__, (int64_t)nFree);
+            }
         }
         delete pcoinsTip;
         pcoinsTip = NULL;

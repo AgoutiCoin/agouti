@@ -4066,7 +4066,7 @@ bool AbortNode(const std::string& strMessage, const std::string& userMessage)
     LogPrintf("*** %s\n", strMessage);
     uiInterface.ThreadSafeMessageBox(
         userMessage.empty() ? _("Error: A fatal internal error occured, see debug.log for details") : userMessage,
-        "", CClientUIInterface::MSG_ERROR);
+        "", CClientUIInterface::MSG_ERROR & ~CClientUIInterface::MODAL);
     StartShutdown();
     return false;
 }
@@ -6078,15 +6078,21 @@ bool ProcessMessages(CNode* pfrom)
             fRet = ProcessMessage(pfrom, strCommand, vRecv, msg.nTime);
             boost::this_thread::interruption_point();
         } catch (std::ios_base::failure& e) {
-            pfrom->PushMessage("reject", strCommand, REJECT_MALFORMED, string("error parsing message"));
-            if (strstr(e.what(), "end of data")) {
-                // Allow exceptions from under-length message on vRecv
-                LogPrintf("ProcessMessages(%s, %u bytes): Exception '%s' caught, normally caused by a message being shorter than its stated length\n", SanitizeString(strCommand), nMessageSize, e.what());
-            } else if (strstr(e.what(), "size too large")) {
-                // Allow exceptions from over-long size
-                LogPrintf("ProcessMessages(%s, %u bytes): Exception '%s' caught\n", SanitizeString(strCommand), nMessageSize, e.what());
+            if (strstr(e.what(), "write failed")) {
+                // Disk write error — not a malformed message. Trigger clean shutdown.
+                AbortNode(std::string("Disk write error: ") + e.what(), _("Error: Disk write failed. Check available disk space."));
+                fOk = false;
             } else {
-                PrintExceptionContinue(&e, "ProcessMessages()");
+                pfrom->PushMessage("reject", strCommand, REJECT_MALFORMED, string("error parsing message"));
+                if (strstr(e.what(), "end of data")) {
+                    // Allow exceptions from under-length message on vRecv
+                    LogPrintf("ProcessMessages(%s, %u bytes): Exception '%s' caught, normally caused by a message being shorter than its stated length\n", SanitizeString(strCommand), nMessageSize, e.what());
+                } else if (strstr(e.what(), "size too large")) {
+                    // Allow exceptions from over-long size
+                    LogPrintf("ProcessMessages(%s, %u bytes): Exception '%s' caught\n", SanitizeString(strCommand), nMessageSize, e.what());
+                } else {
+                    PrintExceptionContinue(&e, "ProcessMessages()");
+                }
             }
         } catch (boost::thread_interrupted) {
             throw;
