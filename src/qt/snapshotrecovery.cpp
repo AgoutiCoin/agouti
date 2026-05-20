@@ -25,6 +25,7 @@
 #include <QNetworkRequest>
 #include <QProcess>
 #include <QProgressBar>
+#include <QSemaphore>
 #include <QPushButton>
 #include <QTemporaryDir>
 #include <QTemporaryFile>
@@ -79,6 +80,7 @@ public:
         Status,
         Progress,
         CancelLocked,
+        AskKeepSnapshot,
         Finished
     };
 
@@ -522,13 +524,20 @@ public:
         : QThread(0),
           m_dataDir(dataDir),
           m_cancelFlag(cancelFlag),
-          m_receiver(receiver)
+          m_receiver(receiver),
+          m_keepAnswer(0)
     {
     }
 
     bool isCancelRequested() const
     {
         return m_cancelFlag && m_cancelFlag->loadAcquire() != 0;
+    }
+
+    void answerKeepSnapshot(bool keep)
+    {
+        m_keepAnswer.storeRelease(keep ? 1 : 0);
+        m_keepSemaphore.release();
     }
 
 protected:
@@ -599,12 +608,41 @@ protected:
             }
         }
 
+        // Ask user whether to keep the zip before any filesystem mutations.
+        // For reused existing snapshots the user already decided to keep previously.
+        bool keepSnapshot = reusedExisting;
+        if (!reusedExisting) {
+            if (isCancelRequested()) {
+                QFile::remove(zipPath);
+                finishCancelled();
+                return;
+            }
+            postAskKeepSnapshot(zipPath);
+            m_keepSemaphore.acquire();
+            keepSnapshot = (m_keepAnswer.loadAcquire() != 0);
+            if (keepSnapshot) {
+                QFile::remove(persistentZipPath);
+                bool saved = QFile::rename(zipPath, persistentZipPath);
+                if (!saved) {
+                    LogPrintf("SnapshotRecovery: cannot move snapshot to %s, copying instead\n",
+                              persistentZipPath.toStdString());
+                    saved = QFile::copy(zipPath, persistentZipPath);
+                    if (saved)
+                        QFile::remove(zipPath);
+                }
+                if (saved)
+                    zipPath = persistentZipPath;
+                else
+                    keepSnapshot = false;
+            }
+        }
+
         // Beyond this point operations are filesystem-mutating and not safely cancellable.
         postCancelLocked();
 
         QTemporaryDir stagingDir(QString::fromStdString((canonicalDataDir / ".snapshot-recovery-XXXXXX").string()));
         if (!stagingDir.isValid()) {
-            QFile::remove(zipPath);
+            if (!keepSnapshot) QFile::remove(zipPath);
             finish(false, SRTr("Cannot create secure snapshot staging directory."));
             return;
         }
@@ -612,7 +650,7 @@ protected:
         fs::path canonicalStagingDir;
         if (!CanonicalDirectory(fs::path(stagingDir.path().toStdString()), canonicalStagingDir, error) ||
             !IsPathInsideOrEqual(canonicalDataDir, canonicalStagingDir)) {
-            QFile::remove(zipPath);
+            if (!keepSnapshot) QFile::remove(zipPath);
             finish(false, SRTr("Snapshot staging directory escapes the data directory."));
             return;
         }
@@ -620,7 +658,7 @@ protected:
         postStatus(SRTr("Validating snapshot archive..."));
         postProgress(84);
         if (!ValidateZipArchive(zipPath, canonicalStagingDir, error)) {
-            QFile::remove(zipPath);
+            if (!keepSnapshot) QFile::remove(zipPath);
             finish(false, error);
             return;
         }
@@ -628,13 +666,13 @@ protected:
         postStatus(SRTr("Extracting snapshot..."));
         postProgress(88);
         if (!extractSnapshot(zipPath, QString::fromStdString(canonicalStagingDir.string()), error)) {
-            QFile::remove(zipPath);
+            if (!keepSnapshot) QFile::remove(zipPath);
             finish(false, error);
             return;
         }
 
         if (!validateExtractedSnapshot(canonicalStagingDir, error)) {
-            QFile::remove(zipPath);
+            if (!keepSnapshot) QFile::remove(zipPath);
             finish(false, error);
             return;
         }
@@ -642,7 +680,7 @@ protected:
         postStatus(SRTr("Removing existing blockchain directories..."));
         postProgress(94);
         if (!DeleteBlockchainDirs(canonicalDataDir, error)) {
-            QFile::remove(zipPath);
+            if (!keepSnapshot) QFile::remove(zipPath);
             finish(false, error);
             return;
         }
@@ -653,25 +691,13 @@ protected:
             QString cleanupError;
             if (!DeleteBlockchainDirs(canonicalDataDir, cleanupError))
                 LogPrintf("SnapshotRecovery: cleanup after failed install also failed: %s\n", cleanupError.toStdString());
-            QFile::remove(zipPath);
+            if (!keepSnapshot) QFile::remove(zipPath);
             finish(false, error);
             return;
         }
 
-        if (!reusedExisting) {
-            QFile::remove(persistentZipPath);
-            bool persisted = QFile::rename(zipPath, persistentZipPath);
-            if (!persisted) {
-                LogPrintf("SnapshotRecovery: cannot move snapshot to %s, copying instead\n",
-                          persistentZipPath.toStdString());
-                persisted = QFile::copy(zipPath, persistentZipPath);
-                if (persisted)
-                    QFile::remove(zipPath);
-            }
-            finish(true, persisted ? persistentZipPath : QString());
-        } else {
-            finish(true, persistentZipPath);
-        }
+        if (!keepSnapshot) QFile::remove(zipPath);
+        finish(true, keepSnapshot ? persistentZipPath : QString());
     }
 
 private:
@@ -871,6 +897,36 @@ private:
 
     bool extractSnapshot(const QString& zipPath, const QString& stagingPath, QString& error)
     {
+#if defined(WIN32)
+        // Windows lacks a native unzip; use PowerShell Expand-Archive (available since PS 5 / Windows 10).
+        // Escape single quotes inside paths by doubling them (PowerShell literal string rule).
+        auto psEscape = [](const QString& s) {
+            return QString(s).replace(QLatin1Char('\''), QLatin1String("''"));
+        };
+        const QString psCmd = QString("Expand-Archive -LiteralPath '%1' -DestinationPath '%2' -Force")
+                                  .arg(psEscape(zipPath))
+                                  .arg(psEscape(stagingPath));
+        QProcess proc;
+        proc.start("powershell", QStringList() << "-NoProfile" << "-NonInteractive" << "-Command" << psCmd);
+        if (!proc.waitForStarted(30000)) {
+            error = SRTr("Cannot start PowerShell for extraction. Ensure PowerShell 5 or later is installed.");
+            return false;
+        }
+        if (!proc.waitForFinished(600000)) {
+            proc.kill();
+            proc.waitForFinished(30000);
+            error = SRTr("Snapshot extraction timed out.");
+            LogPrintf("SnapshotRecovery: PowerShell Expand-Archive timed out\n");
+            return false;
+        }
+        if (proc.exitStatus() != QProcess::NormalExit || proc.exitCode() != 0) {
+            const QString stderrText = QString::fromLocal8Bit(proc.readAllStandardError());
+            error = SRTr("Snapshot extraction failed: %1").arg(stderrText);
+            LogPrintf("SnapshotRecovery: Expand-Archive exit %d stderr: %s\n", proc.exitCode(), stderrText.toStdString());
+            return false;
+        }
+        return true;
+#else
         QString unzipBin;
         if (!FindUnzip(unzipBin, error))
             return false;
@@ -895,6 +951,7 @@ private:
             return false;
         }
         return true;
+#endif
     }
 
     bool validateExtractedSnapshot(const fs::path& canonicalStagingDir, QString& error)
@@ -940,9 +997,16 @@ private:
         return true;
     }
 
+    void postAskKeepSnapshot(const QString& currentZipPath)
+    {
+        QCoreApplication::postEvent(m_receiver, new SnapshotRecoveryEvent(SnapshotRecoveryEvent::AskKeepSnapshot, currentZipPath, -1, false, false));
+    }
+
     fs::path m_dataDir;
     QAtomicInt* m_cancelFlag;
     QObject* m_receiver;
+    QSemaphore m_keepSemaphore;
+    QAtomicInt m_keepAnswer;
 };
 
 SnapshotRecoveryDialog::SnapshotRecoveryDialog(const boost::filesystem::path& dataDir, QWidget* parent)
@@ -988,6 +1052,8 @@ SnapshotRecoveryDialog::~SnapshotRecoveryDialog()
 {
     if (m_worker) {
         m_cancelRequested.storeRelease(1);
+        // Unblock thread if it is waiting for the keep-snapshot answer.
+        m_worker->answerKeepSnapshot(false);
         m_worker->wait();
         delete m_worker;
         m_worker = 0;
@@ -1043,12 +1109,29 @@ bool SnapshotRecoveryDialog::event(QEvent* event)
             m_cancelButton->setEnabled(false);
             m_cancelButton->hide();
         }
+    } else if (recoveryEvent->kind == SnapshotRecoveryEvent::AskKeepSnapshot) {
+        // Ask the user before any filesystem mutations so the zip survives extraction failures.
+        bool keep = false;
+        if (m_worker && !m_cancelRequested.loadAcquire()) {
+            const QString persistentZipPath = QString::fromStdString(
+                (m_dataDir / "agoutisnapshot.zip").string());
+            const qint64 sizeMB = QFileInfo(recoveryEvent->message).size() / (1024 * 1024);
+            QMessageBox::StandardButton reply = QMessageBox::question(
+                this,
+                SRTr("Keep snapshot?"),
+                SRTr("Keep the downloaded snapshot file (%1 MB) at:\n\n%2\n\n"
+                     "If kept, future recovery will reuse it after SHA256 verification "
+                     "instead of downloading again.").arg(sizeMB).arg(persistentZipPath),
+                QMessageBox::Yes | QMessageBox::No,
+                QMessageBox::No);
+            keep = (reply == QMessageBox::Yes);
+        }
+        if (m_worker)
+            m_worker->answerKeepSnapshot(keep);
     } else if (recoveryEvent->kind == SnapshotRecoveryEvent::Finished) {
         m_success = recoveryEvent->success;
         m_cancelled = recoveryEvent->cancelled;
-        QString persistentZipPath;
         if (m_success) {
-            persistentZipPath = recoveryEvent->message;
             m_failureReason.clear();
             m_progressBar->setValue(100);
             m_statusLabel->setText(SRTr("Snapshot extracted. Starting node..."));
@@ -1064,20 +1147,6 @@ bool SnapshotRecoveryDialog::event(QEvent* event)
             m_worker->wait();
             delete m_worker;
             m_worker = 0;
-        }
-
-        if (m_success && !persistentZipPath.isEmpty() && QFileInfo(persistentZipPath).isFile()) {
-            const qint64 sizeMB = QFileInfo(persistentZipPath).size() / (1024 * 1024);
-            QMessageBox::StandardButton reply = QMessageBox::question(
-                this,
-                SRTr("Keep snapshot?"),
-                SRTr("Keep the downloaded snapshot file (%1 MB) at:\n\n%2\n\n"
-                     "If kept, future recovery will reuse it after SHA256 verification "
-                     "instead of downloading again.").arg(sizeMB).arg(persistentZipPath),
-                QMessageBox::Yes | QMessageBox::No,
-                QMessageBox::No);
-            if (reply == QMessageBox::No)
-                QFile::remove(persistentZipPath);
         }
 
         accept();
