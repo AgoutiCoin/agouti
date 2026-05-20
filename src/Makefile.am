@@ -498,6 +498,9 @@ endif
 endif
 
 CLEANFILES = leveldb/libleveldb.a leveldb/libmemenv.a
+CLEANFILES += crypto/libbitcoin_crypto.a libbitcoin_util.a libbitcoin_common.a
+CLEANFILES += univalue/libbitcoin_univalue.a libbitcoin_server.a libbitcoin_cli.a
+CLEANFILES += libbitcoin_wallet.a libbitcoin_zmq.a
 CLEANFILES += *.gcda *.gcno
 CLEANFILES += compat/*.gcda compat/*.gcno
 CLEANFILES += crypto/*.gcda crypto/*.gcno
