@@ -2792,8 +2792,10 @@ bool CWallet::CreateCoinStakeV5(unsigned int nBits, int64_t nSearchInterval, CMu
                 vinMarker.scriptSig = CScript() << OP_PROOFOFSTAKE << nNewHeight;
                 txNew.vin.push_back(vinMarker);
 
-                // vout[1]: block reward to collateral address (P2PKH)
-                CAmount nReward = GetBlockValue(pindexPrev->nHeight);
+                // vout[1]: block reward to collateral address (P2PKH).
+                // Use the height of the block being created (nNewHeight) to match
+                // the consensus mint calculation in ConnectBlock and FillBlockPayee.
+                CAmount nReward = GetBlockValue(nNewHeight);
                 CScript scriptPubKeyOut = GetScriptForDestination(pubKeyCollateral.GetID());
                 txNew.vout.push_back(CTxOut(nReward, scriptPubKeyOut));
 

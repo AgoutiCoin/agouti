@@ -492,13 +492,19 @@ bool CheckStakePointerKernelHash(
 
     // Self-defending timestamp bounds — this kernel is only called for v5
     // post-fork blocks where the 60 s future-drift rule is in effect.
+    // Lower bound: must be after the previous block's median time past
+    // (mirrors ContextualCheckBlockHeader).
     int64_t nMTP = pindexPrev->GetMedianTimePast();
     if ((int64_t)nTimeStake <= nMTP)
         return error("CheckStakePointerKernelHash(): nTimeStake %u <= MTP %d",
                      (unsigned)nTimeStake, (int)nMTP);
-    if ((int64_t)nTimeStake > (int64_t)pindexPrev->GetBlockTime() + 60)
-        return error("CheckStakePointerKernelHash(): nTimeStake %u too far ahead of prevTime %d",
-                     (unsigned)nTimeStake, (int)pindexPrev->GetBlockTime());
+    // Upper bound: future-drift relative to network-adjusted time, mirroring the
+    // 60 s PoS drift enforced in ContextualCheckBlock for v5 heights. This must
+    // NOT be relative to the previous block time — doing so would cap block
+    // spacing at 60 s and contradict the 600 s (10 minute) target spacing.
+    if ((int64_t)nTimeStake > GetAdjustedTime() + 60)
+        return error("CheckStakePointerKernelHash(): nTimeStake %u too far in the future (adjusted=%d)",
+                     (unsigned)nTimeStake, (int)GetAdjustedTime());
 
     // Build the kernel data stream — field order is consensus-critical.
     CDataStream ss(SER_GETHASH, 0);
