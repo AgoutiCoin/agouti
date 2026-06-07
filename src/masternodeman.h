@@ -73,8 +73,11 @@ public:
     map<uint256, CMasternodeBroadcast> mapSeenMasternodeBroadcast;
     // Keep track of all pings I've seen
     map<uint256, CMasternodePing> mapSeenMasternodePing;
-    // Keep track of all IP updates I've seen
+    // Keep track of all IP updates I've seen (relay/getdata cache, not persisted)
     map<uint256, CMasternodeIPUpdate> mapSeenMasternodeIPUpdate;
+    // Durable latest-per-vin IP update (persisted). One authoritative dynamic
+    // address per live masternode, keyed by collateral outpoint.
+    map<COutPoint, CMasternodeIPUpdate> mapLatestMasternodeIPUpdate;
 
     // keep track of dsq count to prevent masternodes from gaming obfuscation queue
     int64_t nDsqCount;
@@ -93,6 +96,20 @@ public:
 
         READWRITE(mapSeenMasternodeBroadcast);
         READWRITE(mapSeenMasternodePing);
+
+        // Durable latest-per-vin IP updates were appended after the ping map.
+        // Tolerate older mncache.dat files that end here (no such field): the
+        // read throws on EOF, which we swallow, leaving the map empty without
+        // invalidating the rest of the cache.
+        if (ser_action.ForRead()) {
+            try {
+                READWRITE(mapLatestMasternodeIPUpdate);
+            } catch (const std::exception&) {
+                mapLatestMasternodeIPUpdate.clear();
+            }
+        } else {
+            READWRITE(mapLatestMasternodeIPUpdate);
+        }
     }
 
     CMasternodeMan();
@@ -159,6 +176,19 @@ public:
 
     /// Update masternode list and maps using provided CMasternodeBroadcast
     void UpdateMasternodeList(CMasternodeBroadcast mnb);
+
+    /// Record the latest-per-vin dynamic IP update (durable) and keep it
+    /// servable via the seen cache. Only replaces an existing entry when newer.
+    void UpdateLatestIPUpdate(const CMasternodeIPUpdate& mnip);
+
+    /// Re-apply the durable latest IP update for a vin to the in-memory
+    /// masternode (idempotent, no DoS scoring). Returns true if a latest update
+    /// exists and was (re-)applied.
+    bool ApplyLatestIPUpdate(const CTxIn& vin);
+
+    /// Rebuild relay/in-memory IP update state from the durable latest map,
+    /// e.g. after loading mncache.dat.
+    void RebuildIPUpdateState();
 };
 
 #endif

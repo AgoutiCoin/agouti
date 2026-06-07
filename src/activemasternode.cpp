@@ -324,11 +324,15 @@ bool CActiveMasternode::SendIPUpdateIfNeeded(std::string& errorMessage)
 
     service = serviceNow;
 
-    // Insert into seen map and relay.
-    mnodeman.mapSeenMasternodeIPUpdate.insert(make_pair(mnip.GetHash(), mnip));
+    // Record as durable latest-per-vin update (also keeps it servable) and relay.
+    // Durability across restart comes from this map (persisted in mncache.dat),
+    // not from masternode.conf.
+    mnodeman.UpdateLatestIPUpdate(mnip);
     mnip.Relay();
 
-    // Update masternode.conf so the entry survives restart.
+    // Best-effort: if a populated masternode.conf entry exists on this hot node,
+    // keep it in sync too. Absence or failure here does not affect dynamic IP
+    // relay or persistence.
     BOOST_FOREACH (CMasternodeConfig::CMasternodeEntry& mne, masternodeConfig.getEntries()) {
         if (mne.getPrivKey() == strMasterNodePrivKey) {
             mne.setIp(serviceNow.ToString());

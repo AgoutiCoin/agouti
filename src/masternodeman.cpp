@@ -66,8 +66,10 @@ static void SyncLocalMasternodeIPUpdate(const CMasternodeIPUpdate& mnip)
                   strAlias.empty() ? strTxHash : strAlias);
     }
 
-    // Cold wallets keep the durable, collateral-signed mnb record. Refresh it
-    // after an IP update so newly syncing peers learn the new address too.
+    // Optional: if an unlocked cold wallet is online here, refresh the
+    // collateral-signed mnb so the new address also becomes part of the durable
+    // broadcast record. This is not required for dynamic IP persistence (handled
+    // by mapLatestMasternodeIPUpdate); it is an opportunistic extra.
     if (fMasterNode || pwalletMain == NULL)
         return;
 
@@ -91,39 +93,17 @@ static void SyncLocalMasternodeIPUpdate(const CMasternodeIPUpdate& mnip)
 static void HandleAcceptedMasternodeIPUpdate(const CMasternodeIPUpdate& mnip, const CNetAddr& addrSource, bool fRelay)
 {
     addrman.Add(CAddress(mnip.addr), addrSource, 2 * 60 * 60);
+    // Persist as the durable latest-per-vin update so the new address survives
+    // restart and is advertised to late-syncing peers.
+    mnodeman.UpdateLatestIPUpdate(mnip);
     if (fRelay) {
         CMasternodeIPUpdate mnipRelay = mnip;
         mnipRelay.Relay();
     }
+    // Optional collateral-signed durable refresh. This is best-effort only and
+    // requires an online, unlocked cold wallet; dynamic IP persistence does NOT
+    // depend on it (the durable latest map above is the persistence mechanism).
     SyncLocalMasternodeIPUpdate(mnip);
-}
-
-static bool ApplyLatestMasternodeIPUpdate(const CTxIn& vin, const CNetAddr& addrSource)
-{
-    map<uint256, CMasternodeIPUpdate>::iterator it = mnodeman.mapSeenMasternodeIPUpdate.begin();
-    map<uint256, CMasternodeIPUpdate>::iterator itBest = mnodeman.mapSeenMasternodeIPUpdate.end();
-    while (it != mnodeman.mapSeenMasternodeIPUpdate.end()) {
-        if ((*it).second.vin == vin &&
-            (itBest == mnodeman.mapSeenMasternodeIPUpdate.end() || (*it).second.sigTime > (*itBest).second.sigTime)) {
-            itBest = it;
-        }
-        ++it;
-    }
-
-    if (itBest == mnodeman.mapSeenMasternodeIPUpdate.end())
-        return false;
-
-    int nDoS = 0;
-    if (!(*itBest).second.CheckAndUpdate(nDoS)) {
-        if (nDoS > 0) {
-            LogPrint("masternode", "ApplyLatestMasternodeIPUpdate - cached update rejected for %s\n",
-                     vin.prevout.hash.ToString());
-        }
-        return false;
-    }
-
-    HandleAcceptedMasternodeIPUpdate((*itBest).second, addrSource, false);
-    return true;
 }
 
 //
@@ -243,6 +223,9 @@ CMasternodeDB::ReadResult CMasternodeDB::Read(CMasternodeMan& mnodemanToLoad, bo
     if (!fDryRun) {
         LogPrint("masternode","Masternode manager - cleaning....\n");
         mnodemanToLoad.CheckAndRemove(true);
+        // Restore dynamic IP state (relay cache + in-memory addresses) from the
+        // durable latest-per-vin map loaded above.
+        mnodemanToLoad.RebuildIPUpdateState();
         LogPrint("masternode","Masternode manager - result:\n");
         LogPrint("masternode","  %s\n", mnodemanToLoad.ToString());
     }
@@ -419,13 +402,24 @@ void CMasternodeMan::CheckAndRemove(bool forceExpiredRemoval)
         }
     }
 
-    // remove expired mapSeenMasternodeIPUpdate
+    // remove expired mapSeenMasternodeIPUpdate (relay cache only)
     map<uint256, CMasternodeIPUpdate>::iterator it5 = mapSeenMasternodeIPUpdate.begin();
     while (it5 != mapSeenMasternodeIPUpdate.end()) {
         if ((*it5).second.sigTime < GetTime() - (MASTERNODE_REMOVAL_SECONDS * 2)) {
             mapSeenMasternodeIPUpdate.erase(it5++);
         } else {
             ++it5;
+        }
+    }
+
+    // prune durable latest IP updates for masternodes that no longer exist.
+    // The latest update is retained as long as its masternode is live.
+    map<COutPoint, CMasternodeIPUpdate>::iterator it6 = mapLatestMasternodeIPUpdate.begin();
+    while (it6 != mapLatestMasternodeIPUpdate.end()) {
+        if (Find(CTxIn((*it6).first)) == NULL) {
+            mapLatestMasternodeIPUpdate.erase(it6++);
+        } else {
+            ++it6;
         }
     }
 }
@@ -440,6 +434,7 @@ void CMasternodeMan::Clear()
     mapSeenMasternodeBroadcast.clear();
     mapSeenMasternodePing.clear();
     mapSeenMasternodeIPUpdate.clear();
+    mapLatestMasternodeIPUpdate.clear();
     nDsqCount = 0;
 }
 
@@ -856,7 +851,9 @@ void CMasternodeMan::ProcessMessage(CNode* pfrom, std::string& strCommand, CData
         if (mnb.CheckInputsAndAdd(nDoS)) {
             // use this as a peer
             addrman.Add(CAddress(mnb.addr), pfrom->addr, 2 * 60 * 60);
-            ApplyLatestMasternodeIPUpdate(mnb.vin, pfrom->addr);
+            // Re-apply the durable latest dynamic IP so a stale broadcast addr
+            // does not clobber a newer hot-key IP update (idempotent, no DoS).
+            mnodeman.ApplyLatestIPUpdate(mnb.vin);
             masternodeSync.AddedMasternodeList(mnb.GetHash());
         } else {
             LogPrint("masternode","mnb - Rejected Masternode entry %s\n", mnb.vin.prevout.hash.ToString());
@@ -949,13 +946,13 @@ void CMasternodeMan::ProcessMessage(CNode* pfrom, std::string& strCommand, CData
 
                     if (vin == mn.vin) {
                         LogPrint("masternode", "dseg - Sent 1 Masternode entry to peer %i\n", pfrom->GetId());
-                        // Also send any IP updates for this MN so the peer
+                        // Also send the latest IP update for this MN so the peer
                         // converges on the current address.
-                        map<uint256, CMasternodeIPUpdate>::iterator itip = mapSeenMasternodeIPUpdate.begin();
-                        while (itip != mapSeenMasternodeIPUpdate.end()) {
-                            if ((*itip).second.vin == mn.vin)
-                                pfrom->PushInventory(CInv(MSG_MASTERNODE_IP_UPDATE, (*itip).first));
-                            ++itip;
+                        map<COutPoint, CMasternodeIPUpdate>::iterator itip = mapLatestMasternodeIPUpdate.find(mn.vin.prevout);
+                        if (itip != mapLatestMasternodeIPUpdate.end()) {
+                            uint256 ipHash = (*itip).second.GetHash();
+                            mapSeenMasternodeIPUpdate[ipHash] = (*itip).second; // keep servable
+                            pfrom->PushInventory(CInv(MSG_MASTERNODE_IP_UPDATE, ipHash));
                         }
                         return;
                     }
@@ -963,11 +960,18 @@ void CMasternodeMan::ProcessMessage(CNode* pfrom, std::string& strCommand, CData
             }
         }
 
-        // Also relay any IP updates so syncing peers converge on current addresses.
+        // Also advertise the latest IP update per live masternode so syncing
+        // peers converge on current addresses. Only useful latest-per-vin
+        // updates are sent (not stale seen-cache history).
         {
-            map<uint256, CMasternodeIPUpdate>::iterator itip = mapSeenMasternodeIPUpdate.begin();
-            while (itip != mapSeenMasternodeIPUpdate.end()) {
-                pfrom->PushInventory(CInv(MSG_MASTERNODE_IP_UPDATE, (*itip).first));
+            map<COutPoint, CMasternodeIPUpdate>::iterator itip = mapLatestMasternodeIPUpdate.begin();
+            while (itip != mapLatestMasternodeIPUpdate.end()) {
+                CMasternode* pmn = Find(CTxIn((*itip).first));
+                if (pmn != NULL && pmn->IsEnabled() && !pmn->addr.IsRFC1918()) {
+                    uint256 ipHash = (*itip).second.GetHash();
+                    mapSeenMasternodeIPUpdate[ipHash] = (*itip).second; // keep servable
+                    pfrom->PushInventory(CInv(MSG_MASTERNODE_IP_UPDATE, ipHash));
+                }
                 ++itip;
             }
         }
@@ -984,15 +988,17 @@ void CMasternodeMan::ProcessMessage(CNode* pfrom, std::string& strCommand, CData
 
         if (pfrom->nVersion < MIN_MNIP_UPDATE_PROTO_VERSION) return;
 
-        if (mapSeenMasternodeIPUpdate.count(mnip.GetHash())) return; //seen
-        mapSeenMasternodeIPUpdate.insert(make_pair(mnip.GetHash(), mnip));
+        uint256 hash = mnip.GetHash();
+        if (mapSeenMasternodeIPUpdate.count(hash)) return; //already processed
 
         int nDoS = 0;
         if (mnip.CheckAndUpdate(nDoS)) {
+            // Only cache (and thus serve/relay) updates we actually accepted.
+            // This bounds memory: junk/unknown-vin updates are not stored.
+            mapSeenMasternodeIPUpdate[hash] = mnip;
             HandleAcceptedMasternodeIPUpdate(mnip, pfrom->addr, true);
-        } else {
-            if (nDoS > 0)
-                Misbehaving(pfrom->GetId(), nDoS);
+        } else if (nDoS > 0) {
+            Misbehaving(pfrom->GetId(), nDoS);
         }
     }
 
@@ -1311,6 +1317,55 @@ void CMasternodeMan::UpdateMasternodeList(CMasternodeBroadcast mnb)
         }
     } else if (pmn->UpdateFromNewBroadcast(mnb)) {
         masternodeSync.AddedMasternodeList(mnb.GetHash());
+    }
+}
+
+void CMasternodeMan::UpdateLatestIPUpdate(const CMasternodeIPUpdate& mnip)
+{
+    LOCK(cs);
+    map<COutPoint, CMasternodeIPUpdate>::iterator it = mapLatestMasternodeIPUpdate.find(mnip.vin.prevout);
+    if (it == mapLatestMasternodeIPUpdate.end() || it->second.sigTime < mnip.sigTime) {
+        mapLatestMasternodeIPUpdate[mnip.vin.prevout] = mnip;
+    }
+    // Always keep the latest update servable via the seen/relay cache.
+    mapSeenMasternodeIPUpdate[mnip.GetHash()] = mnip;
+}
+
+bool CMasternodeMan::ApplyLatestIPUpdate(const CTxIn& vin)
+{
+    LOCK(cs);
+    map<COutPoint, CMasternodeIPUpdate>::iterator it = mapLatestMasternodeIPUpdate.find(vin.prevout);
+    if (it == mapLatestMasternodeIPUpdate.end())
+        return false;
+
+    int nDoS = 0;
+    // Idempotent: CheckAndUpdate accepts the already-applied latest update
+    // without DoS scoring. A genuine signature/ordering failure is logged.
+    if (!it->second.CheckAndUpdate(nDoS)) {
+        if (nDoS > 0)
+            LogPrint("masternode", "ApplyLatestIPUpdate - cached update rejected for %s\n",
+                     vin.prevout.hash.ToString());
+        return false;
+    }
+    return true;
+}
+
+void CMasternodeMan::RebuildIPUpdateState()
+{
+    LOCK(cs);
+    map<COutPoint, CMasternodeIPUpdate>::iterator it = mapLatestMasternodeIPUpdate.begin();
+    while (it != mapLatestMasternodeIPUpdate.end()) {
+        CMasternodeIPUpdate& mnip = it->second;
+        // Re-populate the relay cache so we can still serve the update.
+        mapSeenMasternodeIPUpdate[mnip.GetHash()] = mnip;
+        // Re-apply to the in-memory masternode so the dynamic address and the
+        // anti-replay watermark survive the restart.
+        CMasternode* pmn = Find(CTxIn(it->first));
+        if (pmn != NULL && pmn->nLastIPUpdateTime < mnip.sigTime) {
+            pmn->addr = mnip.addr;
+            pmn->nLastIPUpdateTime = mnip.sigTime;
+        }
+        ++it;
     }
 }
 

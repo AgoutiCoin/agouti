@@ -376,10 +376,11 @@ public:
     }
 
     bool Sign(CKey& keyMasternode, CPubKey& pubKeyMasternode);
+    bool VerifySignature(const CPubKey& pubKeyMasternode) const;
     bool CheckAndUpdate(int& nDos);
     void Relay();
 
-    uint256 GetHash()
+    uint256 GetHash() const
     {
         CHashWriter ss(SER_GETHASH, PROTOCOL_VERSION);
         ss << vin;

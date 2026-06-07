@@ -883,8 +883,20 @@ bool CMasternodeIPUpdate::Sign(CKey& keyMasternode, CPubKey& pubKeyMasternode)
     return true;
 }
 
+bool CMasternodeIPUpdate::VerifySignature(const CPubKey& pubKeyMasternode) const
+{
+    std::string errorMessage;
+    std::string strMessage = vin.ToString() + addr.ToString() +
+                             boost::lexical_cast<std::string>(sigTime);
+
+    std::vector<unsigned char> vchSigCopy = vchSig;
+    return obfuScationSigner.VerifyMessage(pubKeyMasternode, vchSigCopy, strMessage, errorMessage);
+}
+
 bool CMasternodeIPUpdate::CheckAndUpdate(int& nDos)
 {
+    nDos = 0;
+
     // Reject signatures too far in the future.
     if (sigTime > GetAdjustedTime() + 60 * 60) {
         LogPrint("masternode", "mnipupdate - Signature rejected, too far into the future %s\n",
@@ -893,42 +905,40 @@ bool CMasternodeIPUpdate::CheckAndUpdate(int& nDos)
         return false;
     }
 
-    // Reject signatures too far in the past (prevents replay after restart).
-    if (sigTime <= GetAdjustedTime() - 60 * 60) {
-        LogPrint("masternode", "mnipupdate - Signature rejected, too far into the past %s\n",
-                 vin.prevout.hash.ToString());
-        nDos = 1;
-        return false;
-    }
-
     // Find the masternode by VIN.
     CMasternode* pmn = mnodeman.Find(vin);
     if (pmn == NULL) {
+        // Unknown masternode: benign (we may simply be missing the entry).
         LogPrint("masternode", "mnipupdate - Unknown masternode %s\n", vin.prevout.hash.ToString());
         return false;
     }
 
-    // Rate-limit: only accept one update per MASTERNODE_MIN_MNIP_SECONDS.
-    if (pmn->nLastIPUpdateTime > 0 && sigTime - pmn->nLastIPUpdateTime < MASTERNODE_MIN_MNIP_SECONDS) {
-        LogPrint("masternode", "mnipupdate - Too soon after last IP update for %s\n",
-                 vin.prevout.hash.ToString());
-        nDos = 1;
+    // Latest-per-vin anti-replay: reject updates older than the latest we have
+    // already accepted for this masternode. Benign (no DoS), so cached relay of
+    // a superseded update does not get a peer banned.
+    if (pmn->nLastIPUpdateTime > sigTime) {
+        LogPrint("masternode", "mnipupdate - Stale IP update for %s (have %d, got %d)\n",
+                 vin.prevout.hash.ToString(), pmn->nLastIPUpdateTime, sigTime);
         return false;
     }
 
-    // Verify the signature against the registered masternode key.
-    std::string errorMessage;
-    std::string strMessage = vin.ToString() + addr.ToString() +
-                             boost::lexical_cast<std::string>(sigTime);
-
-    if (!obfuScationSigner.VerifyMessage(pmn->pubKeyMasternode, vchSig, strMessage, errorMessage)) {
-        LogPrint("masternode", "mnipupdate - Signature verification failed for %s: %s\n",
-                 vin.prevout.hash.ToString(), errorMessage);
+    // Verify the signature against the registered masternode (hot) key.
+    if (!VerifySignature(pmn->pubKeyMasternode)) {
+        LogPrint("masternode", "mnipupdate - Signature verification failed for %s\n",
+                 vin.prevout.hash.ToString());
         nDos = 100;
         return false;
     }
 
-    // Accept the update — change the announced address.
+    // Idempotent re-application of the latest update: addr already current.
+    // Accept (no DoS, no churn) so internal re-apply paths and benign replay
+    // are not punished.
+    if (pmn->nLastIPUpdateTime == sigTime && sigTime != 0) {
+        pmn->addr = addr; // ensure applied
+        return true;
+    }
+
+    // Accept the (newer) update — change the announced address.
     LogPrint("masternode", "mnipupdate - Accepted IP update for %s: %s -> %s\n",
              vin.prevout.hash.ToString(), pmn->addr.ToString(), addr.ToString());
 
