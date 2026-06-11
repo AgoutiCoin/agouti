@@ -259,7 +259,11 @@ public:
 
     bool IsZerocoinSpend() const
     {
-        return (vin.size() > 0 && vin[0].prevout.IsNull() && vin[0].scriptSig[0] == OP_ZEROCOINSPEND);
+        // Use the size-checked CScript helper: indexing scriptSig[0] directly is an
+        // out-of-bounds (null) dereference when scriptSig is empty, and this is
+        // reachable from IsCoinBase()->ContainsZerocoins() on attacker-supplied
+        // transactions (one input, null prevout, empty scriptSig) — a remote crash.
+        return (vin.size() > 0 && vin[0].prevout.IsNull() && vin[0].scriptSig.IsZerocoinSpend());
     }
 
     bool IsZerocoinMint() const
