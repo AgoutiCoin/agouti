@@ -194,6 +194,16 @@ bool IsBlockValueValid(const CBlock& block, CAmount nExpectedValue, CAmount nMin
     //LogPrintf("XX69----------> IsBlockValueValid(): nMinted: %d, nExpectedValue: %d\n", FormatMoney(nMinted), FormatMoney(nExpectedValue));
 
     if (!masternodeSync.IsSynced()) { //there is no budget data to use to check anything
+        // From the StakePointer fork height onward there are no budget superblocks
+        // on this chain, so the legacy "skip the mint check for the first 100 blocks
+        // of each budget cycle while unsynced" relaxation is pure risk — it let a
+        // syncing node accept an over-minted block fed by a malicious staker.
+        // Enforce the mint bound strictly for v5-era heights.  Pre-fork heights keep
+        // the original lenient behaviour so a reindex of any historical superblock
+        // (none exist at/above the fork) still validates bit-for-bit.
+        if (nHeight >= Params().StakePointerForkHeight())
+            return nMinted <= nExpectedValue;
+
         //super blocks will always be on these blocks, max 100 per budgeting
         if (nHeight % GetBudgetPaymentCycleBlocks() < 100) {
             return true;
