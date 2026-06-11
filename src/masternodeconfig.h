@@ -12,6 +12,8 @@
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/fstream.hpp>
 
+#include "sync.h"
+
 class CMasternodeConfig;
 extern CMasternodeConfig masternodeConfig;
 
@@ -101,6 +103,9 @@ public:
     void deleteAlias(int index);
     bool updateIp(const std::string& txHash, const std::string& outputIndex, const std::string& ip,
         std::string* aliasOut = NULL, std::string* oldIpOut = NULL, std::string* privKeyOut = NULL);
+    // Update the IP of the entry whose masternodeprivkey matches, returning true
+    // if an entry was found and its IP actually changed.  Thread-safe.
+    bool updateIpByPrivKey(const std::string& privKey, const std::string& ip);
     bool writeToMasternodeConf();
 
     std::vector<CMasternodeEntry>& getEntries()
@@ -110,6 +115,7 @@ public:
 
     int getCount()
     {
+        LOCK(cs);
         int c = -1;
         BOOST_FOREACH (CMasternodeEntry e, entries) {
             if (e.getAlias() != "") c++;
@@ -119,6 +125,11 @@ public:
 
 private:
     std::vector<CMasternodeEntry> entries;
+    // Serialises mutation of `entries` (read/add/clear/deleteAlias/updateIp*) and
+    // the snapshot taken by writeToMasternodeConf().  Dynamic-IP updates arrive on
+    // the message-handler thread while the masternode/RPC threads may also touch
+    // the config.
+    mutable CCriticalSection cs;
 };
 
 

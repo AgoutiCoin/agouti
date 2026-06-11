@@ -332,14 +332,10 @@ bool CActiveMasternode::SendIPUpdateIfNeeded(std::string& errorMessage)
 
     // Best-effort: if a populated masternode.conf entry exists on this hot node,
     // keep it in sync too. Absence or failure here does not affect dynamic IP
-    // relay or persistence.
-    BOOST_FOREACH (CMasternodeConfig::CMasternodeEntry& mne, masternodeConfig.getEntries()) {
-        if (mne.getPrivKey() == strMasterNodePrivKey) {
-            mne.setIp(serviceNow.ToString());
-            fConfNeedsWrite = true;
-            break;
-        }
-    }
+    // relay or persistence. updateIpByPrivKey() is thread-safe; the file write is
+    // deferred to ManageStatus() via fConfNeedsWrite.
+    if (masternodeConfig.updateIpByPrivKey(strMasterNodePrivKey, serviceNow.ToString()))
+        fConfNeedsWrite = true;
 
     LogPrintf("CActiveMasternode::SendIPUpdateIfNeeded() - Relayed IP update to %s\n",
               serviceNow.ToString());
@@ -396,13 +392,8 @@ bool CActiveMasternode::Register(std::string strService, std::string strKeyMaste
 
                 // Update the in-memory entry; defer file write to ManageStatus
                 // to avoid iterator invalidation when called from a start-all loop.
-                BOOST_FOREACH (CMasternodeConfig::CMasternodeEntry& mne, masternodeConfig.getEntries()) {
-                    if (mne.getTxHash() == strTxHash && mne.getOutputIndex() == strOutputIndex) {
-                        mne.setIp(service.ToString());
-                        fConfNeedsWrite = true;
-                        break;
-                    }
-                }
+                if (masternodeConfig.updateIp(strTxHash, strOutputIndex, service.ToString()))
+                    fConfNeedsWrite = true;
             }
         }
     }
