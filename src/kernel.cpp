@@ -394,18 +394,6 @@ static bool CheckStakeKernelHashImpl(
     return fSuccess;
 }
 
-// Public API — retained for wallet/staking callers that already hold a full CBlock.
-bool CheckStakeKernelHash(unsigned int nBits, const CBlock& blockFrom, const CTransaction& txPrev, const COutPoint& prevout, unsigned int& nTimeTx, unsigned int nHashDrift, bool fCheck, uint256& hashProofOfStake, bool fPrintProofOfStake, int nHeight)
-{
-    return CheckStakeKernelHashImpl(
-        nBits,
-        blockFrom.GetHash(),
-        (unsigned int)blockFrom.GetBlockTime(),
-        txPrev.vout[prevout.n].nValue,
-        prevout, nTimeTx, nHashDrift, fCheck,
-        hashProofOfStake, fPrintProofOfStake, nHeight);
-}
-
 // Check kernel hash target and coinstake signature.
 //
 // The legacy kernel needs the *historical* stake coin (value + scriptPubKey)

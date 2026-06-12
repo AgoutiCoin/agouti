@@ -151,6 +151,8 @@ CBlockTemplate* CreateNewBlock(const CScript& scriptPubKeyIn, CWallet* pwallet, 
 
         if (nSearchTime >= nLastCoinStakeSearchTime) {
             unsigned int nTxNewTime = 0;
+            // Legacy (pre-StakePointer) stake creation has been removed; block
+            // production below the fork height is no longer possible.
             if (fSpForkActive) {
                 StakePointer stakePointer;
                 if (pwallet->CreateCoinStakeV5(pblock->nBits, nSearchTime - nLastCoinStakeSearchTime, txCoinStake, nTxNewTime, stakePointer)) {
@@ -159,13 +161,6 @@ CBlockTemplate* CreateNewBlock(const CScript& scriptPubKeyIn, CWallet* pwallet, 
                     pblock->vtx[0].vout[0].SetEmpty();
                     pblock->vtx.push_back(CTransaction(txCoinStake));
                     pblock->stakePointer = stakePointer;
-                    fStakeFound = true;
-                }
-            } else {
-                if (pwallet->CreateCoinStake(*pwallet, pblock->nBits, nSearchTime - nLastCoinStakeSearchTime, txCoinStake, nTxNewTime)) {
-                    pblock->nTime = nTxNewTime;
-                    pblock->vtx[0].vout[0].SetEmpty();
-                    pblock->vtx.push_back(CTransaction(txCoinStake));
                     fStakeFound = true;
                 }
             }
@@ -501,16 +496,6 @@ void BitcoinMiner(CWallet* pwallet, bool fProofOfStake)
     CReserveKey reservekey(pwallet);
     unsigned int nExtraNonce = 0;
 
-    //control the amount of times the client will check for mintable coins
-    static std::atomic<bool> fMintableCoins{false};
-    static std::atomic<int> nMintableLastCheck{0};
-
-    if (fProofOfStake && (GetTime() - nMintableLastCheck.load() > 5 * 60)) // 5 minute check time
-    {
-        nMintableLastCheck.store((int)GetTime());
-        fMintableCoins.store(pwallet->MintableCoins());
-    }
-
     while (fGenerateBitcoins || fProofOfStake) {
         if (fProofOfStake) {
             {
@@ -528,7 +513,8 @@ void BitcoinMiner(CWallet* pwallet, bool fProofOfStake)
 
             {
                 // Above the StakePointer fork height, masternode eligibility replaces
-                // mintable-coin eligibility.  fMintableCoins is only checked on the legacy path.
+                // mintable-coin eligibility. Legacy stake creation has been removed,
+                // so staking is suspended entirely until the fork is active.
                 int64_t nTipTime;
                 bool fSpForkActive;
                 {
@@ -542,7 +528,7 @@ void BitcoinMiner(CWallet* pwallet, bool fProofOfStake)
                     LOCK(cs_vNodes);
                     fHasPeers = !vNodes.empty();
                 }
-                bool fPassStakeCheck = fSpForkActive || fMintableCoins.load();
+                bool fPassStakeCheck = fSpForkActive;
                 bool fPassBalanceCheck = fSpForkActive || (nReserveBalance < pwallet->GetBalance());
                 bool fWalletLocked = !fSpForkActive && pwallet->IsLocked();
                 static int64_t nLastStakingWaitLog = 0;
@@ -558,7 +544,7 @@ void BitcoinMiner(CWallet* pwallet, bool fProofOfStake)
                         else if (fWalletLocked)
                             LogPrintf("BitcoinMiner: staking suspended — wallet locked\n");
                         else if (!fPassStakeCheck)
-                            LogPrintf("BitcoinMiner: staking suspended — no mintable coins\n");
+                            LogPrintf("BitcoinMiner: staking suspended — StakePointer fork not active\n");
                         else if (!fPassBalanceCheck)
                             LogPrintf("BitcoinMiner: staking suspended — balance below reserve\n");
                         else
@@ -578,7 +564,7 @@ void BitcoinMiner(CWallet* pwallet, bool fProofOfStake)
                         LOCK(cs_vNodes);
                         fHasPeers = !vNodes.empty();
                     }
-                    fPassStakeCheck   = fSpForkActive || fMintableCoins.load();
+                    fPassStakeCheck   = fSpForkActive;
                     fPassBalanceCheck = fSpForkActive || (nReserveBalance < pwallet->GetBalance());
                     fWalletLocked     = !fSpForkActive && pwallet->IsLocked();
                 }

@@ -264,7 +264,8 @@ public:
         /** StakePointer PoS kernel — shorter periods for testnet */
         nKernelModifierOffset       = 10;
         nStakePointerValidityPeriod = 200;
-        nStakePointerForkHeight     = 150;
+        nStakePointerForkHeight     = 101; // activates immediately after PoW ends (nLastPOWBlock=100);
+                                           // legacy stake creation is removed, so no gap is allowed
     }
     const Checkpoints::CCheckpointData& Checkpoints() const
     {
@@ -317,7 +318,8 @@ public:
         /** StakePointer PoS kernel — minimal windows for regtest */
         nKernelModifierOffset       = 5;
         nStakePointerValidityPeriod = 50;
-        nStakePointerForkHeight     = 201; // activates immediately after PoW ends (nLastPOWBlock=200)
+        nStakePointerForkHeight     = 101; // activates immediately after PoW ends
+                                           // (nLastPOWBlock=100, inherited from CTestNetParams)
     }
     const Checkpoints::CCheckpointData& Checkpoints() const
     {
